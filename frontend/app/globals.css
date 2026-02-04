@@ -1,9 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Base */
+  --bg: #0b0d12;
+  --bg-2: #07080c;
+
+  /* Surfaces (cards) */
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.10);
+
+  /* Text */
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.62);
+
+  /* Accent (main) */
+  --accent: #7c5cff; 
+  --accent-2: #4cd3ff; 
+
+  /* Status */
+  --free: #2cff9a;
+  --warning: #ffcc66;
 }
+
+
 
 @theme inline {
   --color-background: var(--background);
