@@ -24,11 +24,13 @@ export default function RootLayout({
               borderRight: "1px solid var(--border)",
             }}
           >
-            <Link href="/" className="block mb-8 select-none">
-  <h1 className="logoWrapper">
+           <Link href="/" className="block mb-10 mt-2 select-none">
+  <h1 className="logoWrapper flex items-center gap-2">
+    <span className="logoDot"></span>
     <span className="logoText">Trackly</span>
   </h1>
 </Link>
+
 
 
 
