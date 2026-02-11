@@ -1,25 +1,26 @@
 export default function IdeaPage() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-16 text-white">
-      {/* HERO */}
-      <section className="mb-16 text-center">
-        <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70">
-          <span className="h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_16px_rgba(124,92,255,0.9)]" />
-          Idea • Problem → Solution → Implementation
-        </div>
+     {/* HERO */}
+<section className="text-center mb-16">
 
-        <h1 className="mt-6 text-5xl font-semibold tracking-tight">
-          The Idea Behind{" "}
-          <span className="text-[var(--accent)] drop-shadow-[0_0_18px_rgba(124,92,255,0.35)]">
-            Trackly
-          </span>
-        </h1>
+  {/* small label */}
+  
 
-        <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-white/65">
-          Trackly recognizes a song and immediately provides a legal path to access —
-          official platforms, links and an artist page, along with a history of recognized tracks.
-        </p>
-      </section>
+  <h1 className="mt-6 text-5xl font-semibold tracking-tight leading-tight">
+    The team behind{" "}
+    <span className="text-[var(--accent)] drop-shadow-[0_0_18px_rgba(124,92,255,0.35)]">
+      Trackly
+    </span>
+  </h1>
+
+  <p className="mx-auto mt-5 max-w-2xl text-lg text-white/65 leading-relaxed">
+    A student developer duo building a modern music-recognition experience —
+    focused on legal access, clean UX, and a demo-ready presentation for juries.
+  </p>
+
+</section>
+
 
       {/* QUICK SUMMARY */}
       <section className="mb-14 grid gap-4 md:grid-cols-3">

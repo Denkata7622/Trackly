@@ -2,24 +2,25 @@ export default function FoundersPage() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-16 text-white">
       {/* HERO */}
-      <section className="text-center mb-16">
-        <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs text-white/70">
-          <span className="h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_16px_rgba(124,92,255,0.9)]" />
-          Founders • Team Story
-        </div>
+<section className="text-center mb-16">
 
-        <h1 className="mt-6 text-5xl font-semibold tracking-tight">
-          The team behind{" "}
-          <span className="text-[var(--accent)] drop-shadow-[0_0_18px_rgba(124,92,255,0.35)]">
-            Trackly
-          </span>
-        </h1>
+  {/* small label */}
+  
 
-        <p className="mx-auto mt-5 max-w-2xl text-lg text-white/65 leading-relaxed">
-          A student developer duo building a modern music-recognition experience —
-          focused on legal access, clean UX, and a demo-ready presentation for juries.
-        </p>
-      </section>
+  <h1 className="mt-6 text-5xl font-semibold tracking-tight leading-tight">
+    Founders{" "}
+    <span className="text-[var(--accent)] drop-shadow-[0_0_18px_rgba(124,92,255,0.35)]">
+      Trackly
+    </span>
+  </h1>
+
+  <p className="mx-auto mt-5 max-w-2xl text-lg text-white/65 leading-relaxed">
+    A student developer duo building a modern music-recognition experience —
+    focused on legal access, clean UX, and a demo-ready presentation for juries.
+  </p>
+
+</section>
+
 
       {/* ABOUT BOTH */}
       <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl mb-14">
