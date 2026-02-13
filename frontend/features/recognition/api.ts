@@ -14,8 +14,6 @@ type RecognizeResponse = {
 const FALLBACK_COVER =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cdefs%3E%3CradialGradient id='g' cx='35%25' cy='30%25'%3E%3Cstop offset='0%25' stop-color='%23b7a8ff'/%3E%3Cstop offset='60%25' stop-color='%237c5cff'/%3E%3Cstop offset='100%25' stop-color='%230b0d12'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='240' height='240' fill='url(%23g)'/%3E%3C/svg%3E";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
-
 function toTrack(data: RecognizeResponse): Track {
   return {
     id: data.trackId,
@@ -28,12 +26,8 @@ function toTrack(data: RecognizeResponse): Track {
 }
 
 export async function recognizeTrack(): Promise<Track> {
-  const response = await fetch(`${API_BASE_URL}/recognize`, {
+  const response = await fetch("/api/recognize", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({}),
   });
 
   if (!response.ok) {

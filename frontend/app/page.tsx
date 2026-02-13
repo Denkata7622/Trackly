@@ -97,6 +97,7 @@ export default function Home() {
               <div className="mt-3 w-full max-w-2xl resultCardPro resultEnter">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                   <div className="flex items-center gap-4">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={result.artworkUrl || FALLBACK_COVER}
                       alt="cover"

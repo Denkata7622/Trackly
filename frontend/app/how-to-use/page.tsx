@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function HowToUsePage() {
   const steps = [
     {
@@ -151,19 +153,19 @@ export default function HowToUsePage() {
         </div>
 
         <div className="mt-10 flex flex-wrap items-center gap-3">
-          <a
+          <Link
             href="/"
             className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-sm hover:bg-white/10"
           >
             Back to App
-          </a>
+          </Link>
 
-          <a
-            href="/foundres"
+          <Link
+            href="/founders"
             className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-sm text-white/80 hover:bg-white/10"
           >
             View the Founders
-          </a>
+          </Link>
         </div>
       </section>
     </main>

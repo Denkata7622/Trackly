@@ -11,7 +11,7 @@ export default function TrackCard({ track }: { track: Track }) {
     <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 hover:bg-white/10">
       <div className="h-12 w-12 overflow-hidden rounded-lg bg-white/10">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={track.artworkUrl} alt="" className="h-full w-full object-cover" />
+        <img src={track.artworkUrl} alt={`${track.title} cover`} className="h-full w-full object-cover" />
       </div>
 
       <div className="min-w-0 flex-1">
