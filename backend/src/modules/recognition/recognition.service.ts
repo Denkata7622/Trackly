@@ -1,16 +1,26 @@
 import { parseBuffer } from "music-metadata";
 import Tesseract from "tesseract.js";
+import { recognizeWithAudD, RecognitionErrorCode, RecognitionProviderError } from "./providers/audd.provider";
 
 export type SongMetadata = {
-  songName: string;
+  title: string;
   artist: string;
-  album: string;
+  genre: string | null;
+  platformLinks: Record<string, string>;
+  confidence: number;
+  album: string | null;
+  releaseYear: number | null;
+  errorCode?: RecognitionErrorCode;
 };
 
 const UNKNOWN_METADATA: SongMetadata = {
-  songName: "Unknown Song",
+  title: "Unknown Song",
   artist: "Unknown Artist",
+  genre: null,
+  platformLinks: {},
+  confidence: 0,
   album: "Unknown Album",
+  releaseYear: null,
 };
 
 function normalize(text: string): string {
@@ -27,16 +37,20 @@ function parseFromFilename(filename: string): SongMetadata {
 
   for (const separator of separators) {
     if (cleaned.includes(separator)) {
-      const [artist, songName] = cleaned.split(separator).map((part) => part.trim());
-      if (songName && artist) {
-        return { songName, artist, album: UNKNOWN_METADATA.album };
+      const [artist, title] = cleaned.split(separator).map((part) => part.trim());
+      if (title && artist) {
+        return {
+          ...UNKNOWN_METADATA,
+          title,
+          artist,
+        };
       }
     }
   }
 
   return {
     ...UNKNOWN_METADATA,
-    songName: cleaned || UNKNOWN_METADATA.songName,
+    title: cleaned || UNKNOWN_METADATA.title,
   };
 }
 
@@ -51,36 +65,67 @@ function extractSongMetadata(ocrText: string): SongMetadata {
   const artistLine = lines.find((line) => /^artist\s*:/i.test(line));
   const albumLine = lines.find((line) => /^album\s*:/i.test(line));
 
-  const songName = songLine?.split(/:/).slice(1).join(":").trim() || lines[0] || UNKNOWN_METADATA.songName;
+  const title = songLine?.split(/:/).slice(1).join(":").trim() || lines[0] || UNKNOWN_METADATA.title;
   const artist = artistLine?.split(/:/).slice(1).join(":").trim() || lines[1] || UNKNOWN_METADATA.artist;
   const album = albumLine?.split(/:/).slice(1).join(":").trim() || lines[2] || UNKNOWN_METADATA.album;
 
   return {
-    songName: songName || UNKNOWN_METADATA.songName,
+    ...UNKNOWN_METADATA,
+    title: title || UNKNOWN_METADATA.title,
     artist: artist || UNKNOWN_METADATA.artist,
     album: album || UNKNOWN_METADATA.album,
   };
 }
 
-export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
+async function recognizeFromLocalTags(
+  buffer: Buffer,
+  originalName: string,
+  errorCode?: RecognitionErrorCode,
+): Promise<SongMetadata> {
   try {
     const metadata = await parseBuffer(buffer);
-    const songName = metadata.common.title?.trim();
+    const title = metadata.common.title?.trim();
     const artist = metadata.common.artist?.trim();
     const album = metadata.common.album?.trim();
+    const genre = metadata.common.genre?.[0]?.trim() || null;
 
-    if (songName || artist || album) {
+    if (title || artist || album || genre) {
       return {
-        songName: songName || UNKNOWN_METADATA.songName,
+        ...UNKNOWN_METADATA,
+        title: title || UNKNOWN_METADATA.title,
         artist: artist || UNKNOWN_METADATA.artist,
         album: album || UNKNOWN_METADATA.album,
+        genre,
+        confidence: 0.4,
+        ...(errorCode ? { errorCode } : {}),
       };
     }
   } catch {
     // If audio tags cannot be parsed, fallback to file name extraction.
   }
 
-  return parseFromFilename(originalName);
+  const parsed = parseFromFilename(originalName);
+  return errorCode ? { ...parsed, errorCode } : parsed;
+}
+
+export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
+  try {
+    const auddRecognition = await recognizeWithAudD(buffer);
+    if (auddRecognition) {
+      return auddRecognition;
+    }
+  } catch (error) {
+    if (
+      error instanceof RecognitionProviderError &&
+      [RecognitionErrorCode.PROVIDER_TIMEOUT, RecognitionErrorCode.PROVIDER_RATE_LIMIT].includes(error.code)
+    ) {
+      return recognizeFromLocalTags(buffer, originalName, error.code);
+    }
+
+    return recognizeFromLocalTags(buffer, originalName);
+  }
+
+  return recognizeFromLocalTags(buffer, originalName);
 }
 
 export async function recognizeSongFromImage(buffer: Buffer): Promise<SongMetadata> {
