@@ -1,15 +1,6 @@
-type License = "FREE" | "COPYRIGHTED";
+import type { Track } from "./types";
 
-export type Track = {
-  id: string;
-  title: string;
-  artistName: string;
-  artistId: string;
-  artworkUrl: string;
-  license: License;
-};
-
-export const recentTracks: Track[] = [
+export const recentTracksSeed: Track[] = [
   {
     id: "1",
     title: "Blinding Lights",

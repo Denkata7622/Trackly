@@ -1,0 +1,21 @@
+# Root dependencies/build
+node_modules/
+
+# Backend
+backend/node_modules/
+backend/dist/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Env files
+.env
+.env.*
+frontend/.env.local
+backend/.env
+backend/.env.*
+
+# Logs
+npm-debug.log*
