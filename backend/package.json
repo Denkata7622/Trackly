@@ -26,6 +26,8 @@
     "typescript": "^5.8.2"
   },
   "overrides": {
-    "music-metadata>file-type": "^18.0.0"
+    "music-metadata": {
+      "file-type": "^18.0.0"
+    }
   }
 }
