@@ -5,7 +5,7 @@ import { lookupSongByTitleAndArtist } from "./providers/audd.provider";
 export type RecognitionSource = "provider" | "ocr_fallback";
 
 export type SongMetadata = {
-  songName: string;
+  title: string;
   artist: string;
   album: string;
   genre?: string;
@@ -47,7 +47,11 @@ type OcrCandidateMetadata = {
 const UNKNOWN_METADATA: OcrCandidateMetadata = {
   songName: "Unknown Song",
   artist: "Unknown Artist",
+  genre: null,
+  platformLinks: {},
+  confidence: 0,
   album: "Unknown Album",
+  releaseYear: null,
 };
 
 const OCR_CHAR_WHITELIST =
@@ -81,16 +85,20 @@ function parseFromFilename(filename: string): OcrCandidateMetadata {
 
   for (const separator of separators) {
     if (cleaned.includes(separator)) {
-      const [artist, songName] = cleaned.split(separator).map((part) => part.trim());
-      if (songName && artist) {
-        return { songName, artist, album: UNKNOWN_METADATA.album };
+      const [artist, title] = cleaned.split(separator).map((part) => part.trim());
+      if (title && artist) {
+        return {
+          ...UNKNOWN_METADATA,
+          title,
+          artist,
+        };
       }
     }
   }
 
   return {
     ...UNKNOWN_METADATA,
-    songName: cleaned || UNKNOWN_METADATA.songName,
+    title: cleaned || UNKNOWN_METADATA.title,
   };
 }
 
@@ -237,12 +245,17 @@ async function canonicalizeFromProvider(candidate: OcrCandidateMetadata): Promis
   };
 }
 
-export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
+async function recognizeFromLocalTags(
+  buffer: Buffer,
+  originalName: string,
+  errorCode?: RecognitionErrorCode,
+): Promise<SongMetadata> {
   try {
     const metadata = await parseBuffer(buffer);
-    const songName = metadata.common.title?.trim();
+    const title = metadata.common.title?.trim();
     const artist = metadata.common.artist?.trim();
     const album = metadata.common.album?.trim();
+    const genre = metadata.common.genre?.[0]?.trim() || null;
 
     if (songName || artist || album) {
       return toFallbackResponse({
