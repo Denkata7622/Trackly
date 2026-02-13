@@ -3,7 +3,7 @@
 ## POST /recognize
 Recognizes a song from audio input.
 
-Response:
+### Response
 ```json
 {
   "trackId": "string",
@@ -12,5 +12,7 @@ Response:
     "id": "string",
     "name": "string"
   },
-  "license": "FREE | COPYRIGHTED"
+  "license": "FREE | COPYRIGHTED",
+  "artworkUrl": "string (optional)"
 }
+```

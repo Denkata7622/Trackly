@@ -1,13 +1,5 @@
 import Link from "next/link";
-
-type Track = {
-  id: string;
-  title: string;
-  artistName: string;
-  artistId: string;
-  artworkUrl?: string;
-  license: "FREE" | "COPYRIGHTED";
-};
+import type { Track } from "../features/tracks/types";
 
 export default function TrackCard({ track }: { track: Track }) {
   const badge =
