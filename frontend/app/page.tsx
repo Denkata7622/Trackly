@@ -26,6 +26,7 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { addToQueue } = usePlayer();
 
   const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist } =
     useLibrary();
@@ -67,6 +68,17 @@ export default function Home() {
           mediaRecorder.stop();
         }
       }, durationMs);
+    });
+  }
+
+
+  function handlePlayRecognizedSong() {
+    if (!result) return;
+
+    addToQueue({
+      title: result.songName,
+      artist: result.artist,
+      query: `${result.songName} ${result.artist} official audio`,
     });
   }
 
