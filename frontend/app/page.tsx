@@ -2,6 +2,7 @@
 
 import { useRef, useState, type ChangeEvent } from "react";
 import { recognizeFromAudio, recognizeFromImage, type SongRecognitionResult } from "../features/recognition/api";
+import { usePlayer } from "../components/PlayerProvider";
 
 export default function Home() {
   const [result, setResult] = useState<SongRecognitionResult | null>(null);
@@ -9,6 +10,7 @@ export default function Home() {
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { addToQueue } = usePlayer();
 
   async function recordAudioClip(durationMs: number): Promise<Blob> {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -36,6 +38,17 @@ export default function Home() {
           mediaRecorder.stop();
         }
       }, durationMs);
+    });
+  }
+
+
+  function handlePlayRecognizedSong() {
+    if (!result) return;
+
+    addToQueue({
+      title: result.songName,
+      artist: result.artist,
+      query: `${result.songName} ${result.artist} official audio`,
     });
   }
 
@@ -132,6 +145,13 @@ export default function Home() {
             <p className="text-white/90 mt-2">
               <strong>Album:</strong> {result.album}
             </p>
+
+            <button
+              onClick={handlePlayRecognizedSong}
+              className="mt-5 rounded-full bg-violet-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-violet-400 active:scale-[0.98]"
+            >
+              ▶ Play song
+            </button>
           </div>
         )}
       </div>
