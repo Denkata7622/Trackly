@@ -2,7 +2,7 @@
   "name": "trackly",
   "private": true,
   "scripts": {
-    "dev": "bash ./scripts/dev-all.sh",
+    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend -- --hostname 0.0.0.0 --port 3000\"",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:backend": "npm run dev --prefix backend",
     "build": "npm run build --prefix backend && npm run build --prefix frontend",
