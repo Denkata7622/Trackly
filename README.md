@@ -9,6 +9,18 @@ Modern web application for music recognition and legal access to tracks and arti
 
 ## Run locally
 
+## Run both backend + frontend together
+
+From the repository root:
+```bash
+npm run setup
+npm run dev
+```
+
+This starts:
+- backend on `http://localhost:4000`
+- frontend on `http://localhost:3000`
+
 ### 1) Backend
 ```bash
 cd backend

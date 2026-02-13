@@ -2,6 +2,7 @@
 
 ### Run
 ```bash
+npm run setup
 npm run dev
 ```
 
@@ -20,3 +21,11 @@ TRACKLY_API_BASE_URL=http://localhost:4000
 - `features/tracks/types.ts` - shared track types.
 - `features/tracks/seed.ts` - fallback/seed recent tracks.
 - `components/TrackCard.tsx` - reusable track card UI.
+
+
+### Run backend + frontend together
+From repo root:
+```bash
+npm run setup
+npm run dev
+```
