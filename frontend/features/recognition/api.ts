@@ -2,6 +2,13 @@ export type SongRecognitionResult = {
   songName: string;
   artist: string;
   album: string;
+  genre: string;
+  platformLinks: {
+    appleMusic?: string;
+    preview?: string;
+  };
+  releaseYear: number | null;
+  source: "provider" | "ocr_fallback";
 };
 
 const API_BASE_URL =

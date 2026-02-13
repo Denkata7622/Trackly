@@ -1,5 +1,8 @@
 import { parseBuffer } from "music-metadata";
 import Tesseract from "tesseract.js";
+import { lookupSongByTitleAndArtist } from "./providers/audd.provider";
+
+export type RecognitionSource = "provider" | "ocr_fallback";
 
 export type SongMetadata = {
   songName: string;
@@ -35,7 +38,13 @@ type ParsedCandidate = {
   platform?: CandidateField;
 };
 
-const UNKNOWN_METADATA: SongMetadata = {
+type OcrCandidateMetadata = {
+  songName: string;
+  artist: string;
+  album: string;
+};
+
+const UNKNOWN_METADATA: OcrCandidateMetadata = {
   songName: "Unknown Song",
   artist: "Unknown Artist",
   album: "Unknown Album",
@@ -56,7 +65,17 @@ function normalize(text: string): string {
     .trim();
 }
 
-function parseFromFilename(filename: string): SongMetadata {
+function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
+  return {
+    ...metadata,
+    genre: "Unknown Genre",
+    platformLinks: {},
+    releaseYear: null,
+    source: "ocr_fallback",
+  };
+}
+
+function parseFromFilename(filename: string): OcrCandidateMetadata {
   const cleaned = filename.replace(/\.[^/.]+$/, "").replace(/[_]+/g, " ").trim();
   const separators = [" - ", " – ", " — "];
 
@@ -200,6 +219,24 @@ function buildCandidates(
   return { primary, alternatives };
 }
 
+async function canonicalizeFromProvider(candidate: OcrCandidateMetadata): Promise<SongMetadata> {
+  const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
+
+  if (!providerResult) {
+    return toFallbackResponse(candidate);
+  }
+
+  return {
+    songName: providerResult.songName,
+    artist: providerResult.artist,
+    album: providerResult.album,
+    genre: providerResult.genre,
+    platformLinks: providerResult.platformLinks,
+    releaseYear: providerResult.releaseYear,
+    source: "provider",
+  };
+}
+
 export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
   try {
     const metadata = await parseBuffer(buffer);
@@ -208,17 +245,17 @@ export async function recognizeSongFromAudio(buffer: Buffer, originalName: strin
     const album = metadata.common.album?.trim();
 
     if (songName || artist || album) {
-      return {
+      return toFallbackResponse({
         songName: songName || UNKNOWN_METADATA.songName,
         artist: artist || UNKNOWN_METADATA.artist,
         album: album || UNKNOWN_METADATA.album,
-      };
+      });
     }
   } catch {
     // If audio tags cannot be parsed, fallback to file name extraction.
   }
 
-  return parseFromFilename(originalName);
+  return toFallbackResponse(parseFromFilename(originalName));
 }
 
 export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): Promise<SongMetadata> {
