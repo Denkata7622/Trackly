@@ -1,7 +1,6 @@
 import cors from "cors";
 import express from "express";
 import recognitionRouter from "./modules/recognition/recognition.routes";
-import { recognitionRateLimit } from "./middlewares/rateLimit.middleware";
 
 const app = express();
 
@@ -12,6 +11,6 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.use("/api/recognition", recognitionRateLimit, recognitionRouter);
+app.use("/api/recognition", recognitionRouter);
 
 export default app;
