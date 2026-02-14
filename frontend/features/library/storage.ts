@@ -1,4 +1,4 @@
-import type { LibraryState, Playlist } from "./types";
+import type { LibraryState, Playlist } from "./types_tmp";
 
 const FAVORITES_KEY = "trackly.library.favorites";
 const PLAYLISTS_KEY = "trackly.library.playlists";
@@ -29,9 +29,7 @@ function safeJsonParse<T>(value: string | null, fallback: T): T {
 }
 
 export function loadLibraryState(): LibraryState {
-  if (typeof window === "undefined") {
-    return initialState;
-  }
+  if (typeof window === "undefined") return initialState;
 
   const rawFavorites = safeJsonParse<unknown>(window.localStorage.getItem(FAVORITES_KEY), []);
   const rawPlaylists = safeJsonParse<unknown>(window.localStorage.getItem(PLAYLISTS_KEY), []);
@@ -45,7 +43,7 @@ export function loadLibraryState(): LibraryState {
   return { favorites, playlists };
 }
 
-export function persistLibraryState(state: LibraryState) {
+export function persistLibraryState(state: LibraryState): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
   window.localStorage.setItem(PLAYLISTS_KEY, JSON.stringify(state.playlists));

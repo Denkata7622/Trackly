@@ -2,17 +2,19 @@
   "name": "trackly",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend -- --hostname 0.0.0.0 --port 3000\"",
+    "dev": "concurrently -k -n BACKEND,FRONTEND -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend -- --hostname 0.0.0.0 --port 3000\"",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:backend": "npm run dev --prefix backend",
     "build": "npm run build --prefix backend && npm run build --prefix frontend",
     "lint": "npm run lint --prefix frontend",
-    "setup": "npm install --prefix backend && npm install --prefix frontend",
+    "setup": "npm install --prefix backend && npm install --prefix frontend && npm install",
     "clean": "node ./scripts/clean.mjs",
     "reset": "npm run clean && npm run setup"
   },
   "dependencies": {
-    "concurrently": "^9.2.1",
-    "file-type": "^21.3.0"
+    "file-type": "^18.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

@@ -1,8 +1,9 @@
-import type { LibraryState } from "./types";
+import type { LibraryState } from "./types_tmp";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
 
-function getAuthToken() {
+function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem("authToken");
 }
@@ -20,7 +21,6 @@ export async function syncLibraryState(state: LibraryState): Promise<boolean> {
       },
       body: JSON.stringify(state),
     });
-
     return response.ok;
   } catch {
     return false;

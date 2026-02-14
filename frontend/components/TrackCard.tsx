@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useState } from "react";
-import type { Playlist } from "../features/library/types";
+import type { Playlist } from "../features/library/types_tmp";
 import type { Track } from "../features/tracks/types";
 
 type TrackCardProps = {
@@ -11,6 +11,7 @@ type TrackCardProps = {
   onAddToPlaylist: (trackId: string, playlistId: string) => void;
   onCreatePlaylist: (playlistName: string) => void;
   onDeletePlaylist: (playlistId: string) => void;
+  onPlay: (track: Track) => void;
 };
 
 export default function TrackCard({
@@ -21,6 +22,7 @@ export default function TrackCard({
   onAddToPlaylist,
   onCreatePlaylist,
   onDeletePlaylist,
+  onPlay,
 }: TrackCardProps) {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>("");
   const [newPlaylistName, setNewPlaylistName] = useState("");
@@ -33,10 +35,19 @@ export default function TrackCard({
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 hover:bg-white/10">
       <div className="flex items-center gap-4">
-        <div className="h-12 w-12 overflow-hidden rounded-lg bg-white/10">
+        <button
+          type="button"
+          onClick={() => onPlay(track)}
+          className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-white/10 group"
+          aria-label={`Play ${track.title}`}
+          title={`Play ${track.title}`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={track.artworkUrl} alt={`${track.title} cover`} className="h-full w-full object-cover" />
-        </div>
+          <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-white text-lg">
+            ▶
+          </span>
+        </button>
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{track.title}</div>
@@ -78,7 +89,7 @@ export default function TrackCard({
 
         <button
           type="button"
-          className="rounded border border-white/20 px-2 py-1 hover:bg-white/10"
+          className="rounded border border-white/20 px-2 py-1 hover:bg-white/10 disabled:opacity-40"
           disabled={!selectedPlaylistId}
           onClick={() => {
             if (!selectedPlaylistId) return;
@@ -90,14 +101,21 @@ export default function TrackCard({
 
         <input
           className="rounded border border-white/15 bg-black/20 px-2 py-1"
-          placeholder="New playlist"
+          placeholder="New playlist name"
           value={newPlaylistName}
           onChange={(event) => setNewPlaylistName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && newPlaylistName.trim()) {
+              onCreatePlaylist(newPlaylistName);
+              setNewPlaylistName("");
+            }
+          }}
         />
 
         <button
           type="button"
-          className="rounded border border-white/20 px-2 py-1 hover:bg-white/10"
+          className="rounded border border-white/20 px-2 py-1 hover:bg-white/10 disabled:opacity-40"
+          disabled={!newPlaylistName.trim()}
           onClick={() => {
             if (!newPlaylistName.trim()) return;
             onCreatePlaylist(newPlaylistName);
@@ -109,7 +127,7 @@ export default function TrackCard({
 
         <button
           type="button"
-          className="rounded border border-red-400/40 px-2 py-1 text-red-200 hover:bg-red-500/10"
+          className="rounded border border-red-400/40 px-2 py-1 text-red-200 hover:bg-red-500/10 disabled:opacity-40"
           disabled={!selectedPlaylistId}
           onClick={() => {
             if (!selectedPlaylistId) return;
