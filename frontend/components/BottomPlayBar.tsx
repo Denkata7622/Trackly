@@ -13,8 +13,20 @@ function formatTime(seconds: number) {
 }
 
 export default function BottomPlayBar() {
-  const { currentTrack, isPlaying, currentTime, duration, volume, togglePlayPause, skipNext, skipPrevious, seekToPercent, setVolume } =
-    usePlayer();
+  const {
+    currentTrack,
+    isPlaying,
+    currentTime,
+    duration,
+    volume,
+    isInitializing,
+    playerError,
+    togglePlayPause,
+    skipNext,
+    skipPrevious,
+    seekToPercent,
+    setVolume,
+  } = usePlayer();
 
   const progress = useMemo(() => {
     if (!duration) return 0;
@@ -22,7 +34,7 @@ export default function BottomPlayBar() {
   }, [currentTime, duration]);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-[#0b0d12]/95 px-3 py-3 backdrop-blur-xl sm:px-5">
+    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-[linear-gradient(90deg,rgba(43,20,78,0.92),rgba(10,17,34,0.96))] px-3 py-3 backdrop-blur-xl sm:px-5">
       <div className="mx-auto flex max-w-7xl flex-col gap-3">
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
@@ -34,20 +46,30 @@ export default function BottomPlayBar() {
                 ▶ YouTube
               </span>
             </div>
+            {isInitializing && <p className="mt-1 text-xs text-amber-200">Initializing YouTube player…</p>}
+            {playerError && <p className="mt-1 text-xs text-red-300">{playerError}</p>}
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={skipPrevious} className="h-10 w-10 rounded-full border border-white/15 text-sm text-white/90" aria-label="Previous track">
+            <button
+              onClick={skipPrevious}
+              className="h-10 w-10 rounded-full border border-white/15 bg-black/20 text-sm text-white/90"
+              aria-label="Previous track"
+            >
               ⏮
             </button>
             <button
               onClick={togglePlayPause}
-              className="h-11 w-11 rounded-full bg-white text-lg text-black"
+              className="h-11 w-11 rounded-full bg-white text-lg text-black shadow-lg shadow-white/20"
               aria-label={isPlaying ? "Pause playback" : "Start playback"}
             >
               {isPlaying ? "⏸" : "▶"}
             </button>
-            <button onClick={skipNext} className="h-10 w-10 rounded-full border border-white/15 text-sm text-white/90" aria-label="Next track">
+            <button
+              onClick={skipNext}
+              className="h-10 w-10 rounded-full border border-white/15 bg-black/20 text-sm text-white/90"
+              aria-label="Next track"
+            >
               ⏭
             </button>
           </div>

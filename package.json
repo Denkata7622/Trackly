@@ -9,7 +9,8 @@
     "lint": "npm run lint --prefix frontend",
     "setup": "npm install --prefix backend && npm install --prefix frontend && npm install",
     "clean": "node ./scripts/clean.mjs",
-    "reset": "npm run clean && npm run setup"
+    "reset": "npm run clean && npm run setup",
+    "test": "node --test --experimental-strip-types \"backend/tests/**/*.test.ts\" \"frontend/tests/**/*.test.ts\""
   },
   "dependencies": {
     "file-type": "^18.0.0"

@@ -11,7 +11,7 @@ type TrackCardProps = {
   onAddToPlaylist: (trackId: string, playlistId: string) => void;
   onCreatePlaylist: (playlistName: string) => void;
   onDeletePlaylist: (playlistId: string) => void;
-  onPlay: (track: Track) => void;
+  onPlayTrack: (track: Track) => void;
 };
 
 export default function TrackCard({
@@ -22,26 +22,20 @@ export default function TrackCard({
   onAddToPlaylist,
   onCreatePlaylist,
   onDeletePlaylist,
-  onPlay,
+  onPlayTrack,
 }: TrackCardProps) {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>("");
   const [newPlaylistName, setNewPlaylistName] = useState("");
 
   const badge =
     track.license === "FREE"
-      ? "bg-emerald-500/15 text-emerald-300"
-      : "bg-white/10 text-white/60";
+      ? "bg-emerald-500/15 text-emerald-300 border-emerald-300/20"
+      : "bg-white/10 text-white/60 border-white/15";
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 hover:bg-white/10">
-      <div className="flex items-center gap-4">
-        <button
-          type="button"
-          onClick={() => onPlay(track)}
-          className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg bg-white/10 group"
-          aria-label={`Play ${track.title}`}
-          title={`Play ${track.title}`}
-        >
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 transition-all hover:-translate-y-0.5 hover:border-violet-300/30 hover:bg-white/10">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-white/10">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={track.artworkUrl} alt={`${track.title} cover`} className="h-full w-full object-cover" />
           <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-white text-lg">
@@ -50,32 +44,40 @@ export default function TrackCard({
         </button>
 
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{track.title}</div>
+          <div className="truncate text-sm font-medium text-white">{track.title}</div>
           <div className="truncate text-xs text-white/60">{track.artistName}</div>
         </div>
 
         <button
           type="button"
+          onClick={() => onPlayTrack(track)}
+          className="rounded-lg border border-cyan-300/40 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
+        >
+          ▶ Play
+        </button>
+
+        <button
+          type="button"
           onClick={() => onToggleFavorite(track.id)}
-          className="text-xl leading-none"
+          className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-lg leading-none"
           aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}
           title={isFavorite ? "Remove from favorites" : "Add to favorites"}
         >
           {isFavorite ? "♥" : "♡"}
         </button>
 
-        <span className={`rounded-full px-3 py-1 text-xs ${badge}`}>
+        <span className={`rounded-full border px-3 py-1 text-xs ${badge}`}>
           {track.license === "FREE" ? "Free" : "Copyrighted"}
         </span>
 
-        <Link href={`/track/${track.id}`} className="text-xs text-white/70 hover:text-white">
+        <Link href={`/track/${track.id}`} className="text-xs text-violet-200 hover:text-violet-100">
           Open
         </Link>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <select
-          className="rounded border border-white/15 bg-black/20 px-2 py-1"
+          className="rounded-lg border border-white/15 bg-black/20 px-2 py-1.5"
           value={selectedPlaylistId}
           onChange={(event) => setSelectedPlaylistId(event.target.value)}
         >
@@ -89,7 +91,7 @@ export default function TrackCard({
 
         <button
           type="button"
-          className="rounded border border-white/20 px-2 py-1 hover:bg-white/10 disabled:opacity-40"
+          className="rounded-lg border border-white/20 px-2 py-1.5 hover:bg-white/10 disabled:opacity-50"
           disabled={!selectedPlaylistId}
           onClick={() => {
             if (!selectedPlaylistId) return;
@@ -100,8 +102,8 @@ export default function TrackCard({
         </button>
 
         <input
-          className="rounded border border-white/15 bg-black/20 px-2 py-1"
-          placeholder="New playlist name"
+          className="rounded-lg border border-white/15 bg-black/20 px-2 py-1.5"
+          placeholder="New playlist"
           value={newPlaylistName}
           onChange={(event) => setNewPlaylistName(event.target.value)}
           onKeyDown={(event) => {
@@ -114,8 +116,7 @@ export default function TrackCard({
 
         <button
           type="button"
-          className="rounded border border-white/20 px-2 py-1 hover:bg-white/10 disabled:opacity-40"
-          disabled={!newPlaylistName.trim()}
+          className="rounded-lg border border-white/20 px-2 py-1.5 hover:bg-white/10"
           onClick={() => {
             if (!newPlaylistName.trim()) return;
             onCreatePlaylist(newPlaylistName);
@@ -127,7 +128,7 @@ export default function TrackCard({
 
         <button
           type="button"
-          className="rounded border border-red-400/40 px-2 py-1 text-red-200 hover:bg-red-500/10 disabled:opacity-40"
+          className="rounded-lg border border-red-400/40 px-2 py-1.5 text-red-200 hover:bg-red-500/10 disabled:opacity-50"
           disabled={!selectedPlaylistId}
           onClick={() => {
             if (!selectedPlaylistId) return;

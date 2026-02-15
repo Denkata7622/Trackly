@@ -33,23 +33,36 @@ export type SongRecognitionResult = {
   genre: string;
   releaseYear: number;
   platformLinks: {
-    spotify?: string;
+    youtube?: string;
     appleMusic?: string;
-    youtubeMusic?: string;
+    spotify?: string;
+    preview?: string;
   };
-  source: "audio" | "image";
+  youtubeVideoId?: string;
+  releaseYear: number | null;
+  source: "provider" | "ocr_fallback";
+  verificationStatus?: "verified" | "not_found";
 };
+
+export type AudioRecognitionResult = {
+  primaryMatch: SongRecognitionResult;
+  alternatives: SongRecognitionResult[];
+};
+
+export class RecognitionError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "RecognitionError";
+    this.code = code;
+  }
+}
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
 
-async function postMultipart<TResponse>(
-  endpoint: string,
-  fieldName: string,
-  file: Blob,
-  filename: string,
-  extraFields?: Record<string, string>,
-): Promise<TResponse> {
+async function postMultipart<T>(endpoint: string, fieldName: string, file: Blob, filename: string): Promise<T> {
   const formData = new FormData();
   formData.append(fieldName, file, filename);
 
@@ -66,38 +79,40 @@ async function postMultipart<TResponse>(
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`;
+    let code: string | undefined;
+
     try {
-      const errorPayload = (await response.json()) as { message?: string };
-      if (errorPayload.message) message = errorPayload.message;
+      const errorPayload = (await response.json()) as { message?: string; code?: string };
+      if (errorPayload.message) {
+        message = errorPayload.message;
+      }
+      code = errorPayload.code;
     } catch {
       // ignore
     }
-    throw new Error(message);
+
+    throw new RecognitionError(message, code);
   }
 
-  return (await response.json()) as TResponse;
+  return (await response.json()) as T;
 }
 
-function matchToResult(match: SongMatch, source: SongRecognitionResult["source"]): SongRecognitionResult {
-  return {
-    songName: match.songName,
-    artist: match.artist,
-    album: match.album,
-    genre: match.genre,
-    releaseYear: match.releaseYear,
-    platformLinks: match.platformLinks,
-    source,
-  };
-}
-
-export async function recognizeFromAudio(audioBlob: Blob): Promise<SongRecognitionResult> {
-  const raw = await postMultipart<AudioRecognitionResult>(
+export async function recognizeFromAudio(audioBlob: Blob): Promise<AudioRecognitionResult> {
+  const primary = await postMultipart<SongRecognitionResult>(
     "/api/recognition/audio",
     "audio",
     audioBlob,
     "recording.webm",
   );
-  return matchToResult(raw.primaryMatch, "audio");
+
+  return {
+    primaryMatch: primary,
+    alternatives: [],
+  };
+}
+
+export async function recognizeFromImage(imageFile: File): Promise<SongRecognitionResult> {
+  return postMultipart<SongRecognitionResult>("/api/recognition/image", "image", imageFile, imageFile.name);
 }
 
 export async function recognizeFromImage(
