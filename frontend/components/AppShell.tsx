@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import BottomPlayBar from "./BottomPlayBar";
-import { PlayerProvider } from "./PlayerProvider";
+import BottomPlayBar from "./BottomPlayBar_tmp";
+import { PlayerProvider } from "./PlayerProvider_tmp";
 
 const NAV_ITEMS = [
   { href: "/", label: "🎧 App" },

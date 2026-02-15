@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useState } from "react";
-import type { Playlist } from "../features/library/types";
+import type { Playlist } from "../features/library/types_tmp";
 import type { Track } from "../features/tracks/types";
 
 type TrackCardProps = {
@@ -38,7 +38,10 @@ export default function TrackCard({
         <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-white/10">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={track.artworkUrl} alt={`${track.title} cover`} className="h-full w-full object-cover" />
-        </div>
+          <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-white text-lg">
+            ▶
+          </span>
+        </button>
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-white">{track.title}</div>
@@ -103,6 +106,12 @@ export default function TrackCard({
           placeholder="New playlist"
           value={newPlaylistName}
           onChange={(event) => setNewPlaylistName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && newPlaylistName.trim()) {
+              onCreatePlaylist(newPlaylistName);
+              setNewPlaylistName("");
+            }
+          }}
         />
 
         <button

@@ -27,7 +27,27 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
-function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+function buildSeed(song: SongMetadata): number {
+  const source = `${song.songName}|${song.artist}|${song.album}`;
+  return source.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+}
+
+function enrichSong(song: SongMetadata, confidence: number): SongMatch {
+  const seed = buildSeed(song);
+  const genre = GENRES[seed % GENRES.length];
+  const releaseYear = 1998 + (seed % 27);
+  const durationSec = 140 + (seed % 140);
+  const artistSlug = slugify(song.artist);
+  const songSlug = slugify(song.songName);
+
   return {
     ...metadata,
     genre: "Unknown Genre",
@@ -46,7 +66,12 @@ function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   };
 }
 
-function parseFromFilename(filename: string): OcrCandidateMetadata {
+function cleanValue(value?: string): string {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : "";
+}
+
+function parseFromFilename(filename: string): SongMetadata {
   const cleaned = filename.replace(/\.[^/.]+$/, "").replace(/[_]+/g, " ").trim();
   const separators = [" - ", " – ", " — "];
 
@@ -69,21 +94,14 @@ function parseFromFilename(filename: string): OcrCandidateMetadata {
   };
 }
 
-async function preprocessImage(buffer: Buffer): Promise<Buffer> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const sharpProcessor = require("sharp") as (input: Buffer) => {
-    rotate: () => any;
-  };
+function parseStructuredLine(line: string): SongMetadata | null {
+  const songMatch = line.match(/song\s*:\s*([^;|,]+)/i);
+  const artistMatch = line.match(/artist\s*:\s*([^;|,]+)/i);
+  const albumMatch = line.match(/album\s*:\s*([^;|,]+)/i);
 
-  return sharpProcessor(buffer)
-    .rotate()
-    .resize({ width: 1800, height: 1800, fit: "inside", withoutEnlargement: true })
-    .grayscale()
-    .normalize()
-    .threshold(155)
-    .png()
-    .toBuffer();
-}
+  if (!songMatch && !artistMatch && !albumMatch) {
+    return null;
+  }
 
 async function recognizeFromLocalTags(buffer: Buffer, originalName: string): Promise<SongMetadata> {
   try {
