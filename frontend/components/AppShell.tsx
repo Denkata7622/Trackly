@@ -15,6 +15,15 @@ const NAV_ITEMS = [
   { href: "/the-future", label: "💡 The Future" },
 ];
 
+const NAV_ITEMS = [
+  { href: "/", label: "🎧 App" },
+  { href: "/idea", label: "💡 Idea" },
+  { href: "/how-to-use", label: "📘 How to use" },
+  { href: "/founders", label: "👥 Founders" },
+  { href: "/concept", label: "🧠 Concept" },
+  { href: "/the-future", label: "💡 The Future" },
+];
+
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 

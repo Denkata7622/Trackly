@@ -40,11 +40,7 @@ type AuddResponse = {
   };
 };
 
-function readArtist(value: AuddResponse["result"] extends infer R
-  ? R extends { artist?: infer A }
-    ? A
-    : never
-  : never): string | null {
+function readArtist(value: string | { name?: string } | undefined): string | null {
   if (!value) return null;
   if (typeof value === "string") return value.trim() || null;
   if (typeof value === "object" && "name" in value && typeof value.name === "string") {
@@ -53,11 +49,7 @@ function readArtist(value: AuddResponse["result"] extends infer R
   return null;
 }
 
-function readAlbum(value: AuddResponse["result"] extends infer R
-  ? R extends { album?: infer A }
-    ? A
-    : never
-  : never): string | null {
+function readAlbum(value: string | { title?: string } | undefined): string | null {
   if (!value) return null;
   if (typeof value === "string") return value.trim() || null;
   if (typeof value === "object" && "title" in value && typeof value.title === "string") {

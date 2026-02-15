@@ -1,5 +1,6 @@
 import { parseBuffer } from "music-metadata";
 import Tesseract from "tesseract.js";
+import { parseOcrCandidateText, type OcrCandidateMetadata } from "./ocr-parser";
 import {
   lookupSongByTitleAndArtist,
   NoVerifiedResultError,
@@ -12,12 +13,6 @@ export type SongMetadata = ProviderSongMetadata & {
   verificationStatus: "verified" | "not_found";
 };
 
-type OcrCandidateMetadata = {
-  songName: string;
-  artist: string;
-  album: string;
-};
-
 const UNKNOWN_METADATA: OcrCandidateMetadata = {
   songName: "Unknown Song",
   artist: "Unknown Artist",
@@ -26,19 +21,6 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-");
-}
-
-function buildSeed(song: SongMetadata): number {
-  const source = `${song.songName}|${song.artist}|${song.album}`;
-  return source.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-}
 
 function enrichSong(song: SongMetadata, confidence: number): SongMatch {
   const seed = buildSeed(song);
@@ -94,14 +76,9 @@ function parseFromFilename(filename: string): SongMetadata {
   };
 }
 
-function parseStructuredLine(line: string): SongMetadata | null {
-  const songMatch = line.match(/song\s*:\s*([^;|,]+)/i);
-  const artistMatch = line.match(/artist\s*:\s*([^;|,]+)/i);
-  const albumMatch = line.match(/album\s*:\s*([^;|,]+)/i);
-
-  if (!songMatch && !artistMatch && !albumMatch) {
-    return null;
-  }
+async function preprocessImage(buffer: Buffer): Promise<Buffer> {
+  return buffer;
+}
 
 async function recognizeFromLocalTags(buffer: Buffer, originalName: string): Promise<SongMetadata> {
   try {
@@ -121,69 +98,7 @@ async function recognizeFromLocalTags(buffer: Buffer, originalName: string): Pro
     // fall through to filename parser
   }
 
-  return toFallbackResponse(parseFromFilename(originalName));
-}
-
-function extractMetadataFromText(text: string): OcrCandidateMetadata | null {
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const labeled = {
-    songName: "",
-    artist: "",
-    album: "",
-  };
-
-  for (const line of lines) {
-    const songMatch = line.match(/^(song|title|track)\s*[:\-]\s*(.+)$/i);
-    if (songMatch?.[2]) {
-      labeled.songName = songMatch[2].trim();
-      continue;
-    }
-
-    const artistMatch = line.match(/^(artist|singer|by)\s*[:\-]\s*(.+)$/i);
-    if (artistMatch?.[2]) {
-      labeled.artist = artistMatch[2].trim();
-      continue;
-    }
-
-    const albumMatch = line.match(/^(album)\s*[:\-]\s*(.+)$/i);
-    if (albumMatch?.[2]) {
-      labeled.album = albumMatch[2].trim();
-    }
-  }
-
-  if (labeled.songName && labeled.artist) {
-    return {
-      songName: labeled.songName,
-      artist: labeled.artist,
-      album: labeled.album || UNKNOWN_METADATA.album,
-    };
-  }
-
-  for (const line of lines) {
-    const byPattern = line.match(/^(.+?)\s+by\s+(.+)$/i);
-    if (byPattern?.[1] && byPattern?.[2]) {
-      return {
-        songName: byPattern[1].trim(),
-        artist: byPattern[2].trim(),
-        album: UNKNOWN_METADATA.album,
-      };
-    }
-
-    const dashPattern = line.match(/^(.+?)\s[-–—]\s(.+)$/);
-    if (dashPattern?.[1] && dashPattern?.[2]) {
-      return {
-        songName: dashPattern[2].trim(),
-        artist: dashPattern[1].trim(),
-        album: UNKNOWN_METADATA.album,
-      };
-    }
-  }
-
-  return null;
+  throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
 }
 
 export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
@@ -207,7 +122,7 @@ export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): 
 
   try {
     const ocrResult = await worker.recognize(preprocessedImage);
-    const candidate = extractMetadataFromText(ocrResult.data.text);
+    const candidate = parseOcrCandidateText(ocrResult.data.text, UNKNOWN_METADATA.album);
 
     if (!candidate) {
       throw new NoVerifiedResultError("Could not parse a valid Song - Artist pair from the uploaded image.");
