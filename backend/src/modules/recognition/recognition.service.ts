@@ -1,41 +1,15 @@
 import { parseBuffer } from "music-metadata";
 import Tesseract from "tesseract.js";
-import { lookupSongByTitleAndArtist } from "./providers/audd.provider";
+import {
+  lookupSongByTitleAndArtist,
+  NoVerifiedResultError,
+  recognizeAudioWithAudd,
+  type ProviderSongMetadata,
+} from "./providers/audd.provider";
 
-export type RecognitionSource = "provider" | "ocr_fallback";
-
-export type SongMetadata = {
-  title: string;
-  artist: string;
-  album: string;
-  genre?: string;
-  platform?: string;
-  confidence?: {
-    songName: number;
-    artist: number;
-    genre?: number;
-    platform?: number;
-    overall: number;
-  };
-  alternatives?: Array<{
-    songName: string;
-    artist: string;
-    genre?: string;
-    platform?: string;
-    overallConfidence: number;
-  }>;
-};
-
-type CandidateField = {
-  value: string;
-  confidence: number;
-};
-
-type ParsedCandidate = {
-  title?: CandidateField;
-  artist?: CandidateField;
-  genre?: CandidateField;
-  platform?: CandidateField;
+export type SongMetadata = ProviderSongMetadata & {
+  source: "provider" | "ocr_fallback";
+  verificationStatus: "verified" | "not_found";
 };
 
 type OcrCandidateMetadata = {
@@ -47,27 +21,11 @@ type OcrCandidateMetadata = {
 const UNKNOWN_METADATA: OcrCandidateMetadata = {
   songName: "Unknown Song",
   artist: "Unknown Artist",
-  genre: null,
-  platformLinks: {},
-  confidence: 0,
   album: "Unknown Album",
-  releaseYear: null,
 };
 
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
-const MIN_FIELD_CONFIDENCE = 0.55;
-const MIN_OVERALL_CONFIDENCE = 0.68;
-const ALTERNATIVE_DELTA = 0.08;
-
-function normalize(text: string): string {
-  return text
-    .replace(/[|]/g, "I")
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
   return {
@@ -76,6 +34,15 @@ function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
     platformLinks: {},
     releaseYear: null,
     source: "ocr_fallback",
+    verificationStatus: "not_found",
+  };
+}
+
+function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
+  return {
+    ...metadata,
+    source: "provider",
+    verificationStatus: metadata.youtubeVideoId ? "verified" : "not_found",
   };
 }
 
@@ -89,7 +56,7 @@ function parseFromFilename(filename: string): OcrCandidateMetadata {
       if (title && artist) {
         return {
           ...UNKNOWN_METADATA,
-          title,
+          songName: title,
           artist,
         };
       }
@@ -98,7 +65,7 @@ function parseFromFilename(filename: string): OcrCandidateMetadata {
 
   return {
     ...UNKNOWN_METADATA,
-    title: cleaned || UNKNOWN_METADATA.title,
+    songName: cleaned || UNKNOWN_METADATA.songName,
   };
 }
 
@@ -118,144 +85,12 @@ async function preprocessImage(buffer: Buffer): Promise<Buffer> {
     .toBuffer();
 }
 
-function asField(value: string, confidence: number): CandidateField {
-  return { value: normalize(value), confidence: Math.max(0, Math.min(1, confidence)) };
-}
-
-function parseLabeledLine(line: string, confidence: number): ParsedCandidate {
-  const normalizedLine = normalize(line);
-  const labelPatterns: Array<[keyof ParsedCandidate, RegExp]> = [
-    ["title", /^(song|title|track)\s*[:\-]\s*(.+)$/i],
-    ["artist", /^(artist|singer|by)\s*[:\-]\s*(.+)$/i],
-    ["genre", /^(genre)\s*[:\-]\s*(.+)$/i],
-    ["platform", /^(platform|service|app)\s*[:\-]\s*(.+)$/i],
-  ];
-
-  for (const [key, pattern] of labelPatterns) {
-    const match = normalizedLine.match(pattern);
-    if (match?.[2]) {
-      return { [key]: asField(match[2], confidence) };
-    }
-  }
-
-  const byMatch = normalizedLine.match(/^(.+)\s+by\s+(.+)$/i);
-  if (byMatch) {
-    return {
-      title: asField(byMatch[1], confidence),
-      artist: asField(byMatch[2], confidence),
-    };
-  }
-
-  const dashMatch = normalizedLine.match(/^(.+?)\s[-–—]\s(.+)$/);
-  if (dashMatch) {
-    return {
-      artist: asField(dashMatch[1], confidence * 0.9),
-      title: asField(dashMatch[2], confidence * 0.9),
-    };
-  }
-
-  return {};
-}
-
-function chooseBestField(candidates: Array<CandidateField | undefined>): CandidateField | undefined {
-  return candidates.filter(Boolean).sort((a, b) => (b?.confidence ?? 0) - (a?.confidence ?? 0))[0];
-}
-
-function buildCandidates(
-  lines: Array<{ text: string; confidence: number }>,
-): { primary?: SongMetadata; alternatives: SongMetadata["alternatives"] } {
-  const parsedLines = lines
-    .map((line) => parseLabeledLine(line.text, line.confidence))
-    .filter((candidate) => Object.keys(candidate).length > 0);
-
-  const aggregate: ParsedCandidate = {
-    title: chooseBestField(parsedLines.map((line) => line.title)),
-    artist: chooseBestField(parsedLines.map((line) => line.artist)),
-    genre: chooseBestField(parsedLines.map((line) => line.genre)),
-    platform: chooseBestField(parsedLines.map((line) => line.platform)),
-  };
-
-  if (!aggregate.title || !aggregate.artist) {
-    return { alternatives: [] };
-  }
-
-  const overall = (aggregate.title.confidence + aggregate.artist.confidence) / 2;
-  const hasMinimumConfidence =
-    aggregate.title.confidence >= MIN_FIELD_CONFIDENCE &&
-    aggregate.artist.confidence >= MIN_FIELD_CONFIDENCE &&
-    overall >= MIN_OVERALL_CONFIDENCE;
-
-  if (!hasMinimumConfidence) {
-    return { alternatives: [] };
-  }
-
-  const primary: SongMetadata = {
-    songName: aggregate.title.value,
-    artist: aggregate.artist.value,
-    album: UNKNOWN_METADATA.album,
-    genre: aggregate.genre?.value,
-    platform: aggregate.platform?.value,
-    confidence: {
-      songName: aggregate.title.confidence,
-      artist: aggregate.artist.confidence,
-      genre: aggregate.genre?.confidence,
-      platform: aggregate.platform?.confidence,
-      overall,
-    },
-  };
-
-  const alternatives = parsedLines
-    .filter((line) => line.title && line.artist)
-    .map((line) => {
-      const altOverall = ((line.title?.confidence ?? 0) + (line.artist?.confidence ?? 0)) / 2;
-      return {
-        songName: line.title!.value,
-        artist: line.artist!.value,
-        genre: line.genre?.value,
-        platform: line.platform?.value,
-        overallConfidence: altOverall,
-      };
-    })
-    .filter((alt) =>
-      alt.songName !== primary.songName &&
-      alt.artist !== primary.artist &&
-      primary.confidence &&
-      Math.abs(primary.confidence.overall - alt.overallConfidence) <= ALTERNATIVE_DELTA,
-    )
-    .sort((a, b) => b.overallConfidence - a.overallConfidence);
-
-  return { primary, alternatives };
-}
-
-async function canonicalizeFromProvider(candidate: OcrCandidateMetadata): Promise<SongMetadata> {
-  const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
-
-  if (!providerResult) {
-    return toFallbackResponse(candidate);
-  }
-
-  return {
-    songName: providerResult.songName,
-    artist: providerResult.artist,
-    album: providerResult.album,
-    genre: providerResult.genre,
-    platformLinks: providerResult.platformLinks,
-    releaseYear: providerResult.releaseYear,
-    source: "provider",
-  };
-}
-
-async function recognizeFromLocalTags(
-  buffer: Buffer,
-  originalName: string,
-  errorCode?: RecognitionErrorCode,
-): Promise<SongMetadata> {
+async function recognizeFromLocalTags(buffer: Buffer, originalName: string): Promise<SongMetadata> {
   try {
     const metadata = await parseBuffer(buffer);
-    const title = metadata.common.title?.trim();
+    const songName = metadata.common.title?.trim();
     const artist = metadata.common.artist?.trim();
     const album = metadata.common.album?.trim();
-    const genre = metadata.common.genre?.[0]?.trim() || null;
 
     if (songName || artist || album) {
       return toFallbackResponse({
@@ -265,10 +100,82 @@ async function recognizeFromLocalTags(
       });
     }
   } catch {
-    // If audio tags cannot be parsed, fallback to file name extraction.
+    // fall through to filename parser
   }
 
   return toFallbackResponse(parseFromFilename(originalName));
+}
+
+function extractMetadataFromText(text: string): OcrCandidateMetadata | null {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const labeled = {
+    songName: "",
+    artist: "",
+    album: "",
+  };
+
+  for (const line of lines) {
+    const songMatch = line.match(/^(song|title|track)\s*[:\-]\s*(.+)$/i);
+    if (songMatch?.[2]) {
+      labeled.songName = songMatch[2].trim();
+      continue;
+    }
+
+    const artistMatch = line.match(/^(artist|singer|by)\s*[:\-]\s*(.+)$/i);
+    if (artistMatch?.[2]) {
+      labeled.artist = artistMatch[2].trim();
+      continue;
+    }
+
+    const albumMatch = line.match(/^(album)\s*[:\-]\s*(.+)$/i);
+    if (albumMatch?.[2]) {
+      labeled.album = albumMatch[2].trim();
+    }
+  }
+
+  if (labeled.songName && labeled.artist) {
+    return {
+      songName: labeled.songName,
+      artist: labeled.artist,
+      album: labeled.album || UNKNOWN_METADATA.album,
+    };
+  }
+
+  for (const line of lines) {
+    const byPattern = line.match(/^(.+?)\s+by\s+(.+)$/i);
+    if (byPattern?.[1] && byPattern?.[2]) {
+      return {
+        songName: byPattern[1].trim(),
+        artist: byPattern[2].trim(),
+        album: UNKNOWN_METADATA.album,
+      };
+    }
+
+    const dashPattern = line.match(/^(.+?)\s[-–—]\s(.+)$/);
+    if (dashPattern?.[1] && dashPattern?.[2]) {
+      return {
+        songName: dashPattern[2].trim(),
+        artist: dashPattern[1].trim(),
+        album: UNKNOWN_METADATA.album,
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
+  const providerResult = await recognizeAudioWithAudd(buffer, originalName);
+
+  if (providerResult?.youtubeVideoId) {
+    return toProviderResponse(providerResult);
+  }
+
+  throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
 }
 
 export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): Promise<SongMetadata> {
@@ -282,23 +189,22 @@ export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): 
 
   try {
     const ocrResult = await worker.recognize(preprocessedImage);
-    const lines = (ocrResult.data.lines ?? []).map((line: { text: string; confidence?: number }) => ({
-      text: line.text,
-      confidence: (line.confidence ?? ocrResult.data.confidence ?? 0) / 100,
-    }));
+    const candidate = extractMetadataFromText(ocrResult.data.text);
 
-    const { primary, alternatives } = buildCandidates(lines);
-
-    if (!primary) {
-      throw new Error("No high-confidence metadata candidate detected from OCR.");
+    if (!candidate) {
+      throw new NoVerifiedResultError("Could not parse a valid Song - Artist pair from the uploaded image.");
     }
 
-    if (alternatives && alternatives.length > 0) {
-      primary.alternatives = alternatives;
+    const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
+
+    if (!providerResult) {
+      throw new NoVerifiedResultError("No verified YouTube result found for the OCR track candidate.");
     }
 
-    return primary;
+    return toProviderResponse(providerResult);
   } finally {
     await worker.terminate();
   }
 }
+
+export { recognizeFromLocalTags };

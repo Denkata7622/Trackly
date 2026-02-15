@@ -2,7 +2,7 @@ import multer from "multer";
 
 const memoryStorage = multer.memoryStorage();
 
-const audioFileFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
+const audioFileFilter = (_req: any, file: any, cb: any) => {
   if (file.mimetype.startsWith("audio/")) {
     cb(null, true);
     return;
@@ -10,7 +10,7 @@ const audioFileFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
   cb(new multer.MulterError("LIMIT_UNEXPECTED_FILE", "audio"));
 };
 
-const imageFileFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
+const imageFileFilter = (_req: any, file: any, cb: any) => {
   if (file.mimetype.startsWith("image/")) {
     cb(null, true);
     return;

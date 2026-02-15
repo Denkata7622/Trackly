@@ -4,76 +4,246 @@ export type ProviderSongMetadata = {
   album: string;
   genre: string;
   platformLinks: {
+    youtube?: string;
     appleMusic?: string;
+    spotify?: string;
     preview?: string;
   };
+  youtubeVideoId?: string;
   releaseYear: number | null;
 };
 
-type ITunesTrack = {
-  trackName?: string;
-  artistName?: string;
-  collectionName?: string;
-  primaryGenreName?: string;
-  trackViewUrl?: string;
-  previewUrl?: string;
-  releaseDate?: string;
-};
-
-type ITunesSearchResponse = {
-  resultCount: number;
-  results: ITunesTrack[];
-};
-
-function getReleaseYear(releaseDate?: string): number | null {
-  if (!releaseDate) {
-    return null;
+export class NoVerifiedResultError extends Error {
+  constructor(message = "No verified YouTube result found for recognized song.") {
+    super(message);
+    this.name = "NoVerifiedResultError";
   }
-
-  const parsed = new Date(releaseDate);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return parsed.getUTCFullYear();
 }
 
-export async function lookupSongByTitleAndArtist(
-  title: string,
-  artist: string,
-): Promise<ProviderSongMetadata | null> {
-  const term = [title, artist].filter(Boolean).join(" ").trim();
-  if (!term) {
+export class MissingProviderConfigError extends Error {
+  constructor(message = "Missing AuDD API key. Set AUDD_API_TOKEN or AUDD_API_KEY.") {
+    super(message);
+    this.name = "MissingProviderConfigError";
+  }
+}
+
+type AuddResponse = {
+  status: "success" | "error";
+  result: null | {
+    title?: string;
+    artist?: string | { name?: string };
+    album?: string | { title?: string };
+    release_date?: string;
+    song_link?: string;
+    apple_music?: { url?: string };
+    spotify?: { external_urls?: { spotify?: string } };
+  };
+};
+
+function readArtist(value: AuddResponse["result"] extends infer R
+  ? R extends { artist?: infer A }
+    ? A
+    : never
+  : never): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "object" && "name" in value && typeof value.name === "string") {
+    return value.name.trim() || null;
+  }
+  return null;
+}
+
+function readAlbum(value: AuddResponse["result"] extends infer R
+  ? R extends { album?: infer A }
+    ? A
+    : never
+  : never): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "object" && "title" in value && typeof value.title === "string") {
+    return value.title.trim() || null;
+  }
+  return null;
+}
+
+type YouTubeSearchResponse = {
+  error?: {
+    errors?: Array<{ reason?: string }>;
+  };
+  items?: Array<{ id?: { videoId?: string } }>;
+};
+
+type FetchWithRetryOptions = {
+  attempts: number;
+  baseDelayMs: number;
+};
+
+let youtubeRateLimitedUntil = 0;
+
+const analytics = {
+  recognitionTotal: 0,
+  recognitionSuccess: 0,
+};
+
+function logRecognition(success: boolean) {
+  analytics.recognitionTotal += 1;
+  if (success) analytics.recognitionSuccess += 1;
+
+  if (analytics.recognitionTotal % 10 === 0) {
+    const successRate = (analytics.recognitionSuccess / analytics.recognitionTotal) * 100;
+    console.info(
+      `[analytics] recognition_success_rate=${successRate.toFixed(1)}% (${analytics.recognitionSuccess}/${analytics.recognitionTotal})`,
+    );
+  }
+}
+
+export function shouldRetryStatus(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function fetchWithRetry(
+  input: URL | string,
+  init: RequestInit,
+  options: FetchWithRetryOptions,
+): Promise<Response | null> {
+  let attempt = 0;
+
+  while (attempt < options.attempts) {
+    attempt += 1;
+    try {
+      const response = await fetch(input, init);
+      if (!shouldRetryStatus(response.status)) {
+        return response;
+      }
+    } catch {
+      // retry network failures
+    }
+
+    if (attempt < options.attempts) {
+      await delay(options.baseDelayMs * 2 ** (attempt - 1));
+    }
+  }
+
+  return null;
+}
+
+function getReleaseYear(releaseDate?: string): number | null {
+  if (!releaseDate) return null;
+  const parsed = new Date(releaseDate);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getUTCFullYear();
+}
+
+async function findYouTubeVideoId(query: string): Promise<string | null> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key || !query.trim()) return null;
+
+  if (Date.now() < youtubeRateLimitedUntil) {
     return null;
   }
 
-  const url = `https://itunes.apple.com/search?media=music&entity=song&limit=1&term=${encodeURIComponent(term)}`;
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("type", "video");
+  url.searchParams.set("maxResults", "1");
+  url.searchParams.set("q", query);
+  url.searchParams.set("key", key);
 
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      return null;
+  const response = await fetchWithRetry(url, { signal: AbortSignal.timeout(5000) }, { attempts: 3, baseDelayMs: 300 });
+  if (!response || !response.ok) {
+    if (response?.status === 403) {
+      youtubeRateLimitedUntil = Date.now() + 60_000;
+      console.warn("[youtube] quota/rate limit detected; suppressing calls for 60s");
     }
-
-    const payload = (await response.json()) as ITunesSearchResponse;
-    const topResult = payload.results?.[0];
-
-    if (!topResult?.trackName || !topResult.artistName) {
-      return null;
-    }
-
-    return {
-      songName: topResult.trackName,
-      artist: topResult.artistName,
-      album: topResult.collectionName || "Unknown Album",
-      genre: topResult.primaryGenreName || "Unknown Genre",
-      platformLinks: {
-        appleMusic: topResult.trackViewUrl,
-        preview: topResult.previewUrl,
-      },
-      releaseYear: getReleaseYear(topResult.releaseDate),
-    };
-  } catch {
     return null;
   }
+
+  const payload = (await response.json()) as YouTubeSearchResponse;
+  const reason = payload.error?.errors?.[0]?.reason;
+  if (reason === "quotaExceeded" || reason === "rateLimitExceeded") {
+    youtubeRateLimitedUntil = Date.now() + 60_000;
+    console.warn(`[youtube] ${reason}; suppressing calls for 60s`);
+    return null;
+  }
+
+  return payload.items?.[0]?.id?.videoId ?? null;
+}
+
+export async function recognizeAudioWithAudd(buffer: Buffer, filename: string): Promise<ProviderSongMetadata | null> {
+  const apiToken = process.env.AUDD_API_TOKEN;
+  if (!apiToken) {
+    throw new MissingProviderConfigError();
+  }
+
+  const formData = new FormData();
+  const blob = new Blob([buffer], { type: "audio/webm" });
+  formData.append("file", blob, filename || "recording.webm");
+  formData.append("api_token", apiToken);
+  formData.append("return", "spotify,apple_music");
+
+  const response = await fetchWithRetry(
+    "https://api.audd.io/",
+    { method: "POST", body: formData, signal: AbortSignal.timeout(12000) },
+    { attempts: 3, baseDelayMs: 400 },
+  );
+
+  if (!response?.ok) {
+    logRecognition(false);
+    return null;
+  }
+
+  const payload = (await response.json()) as AuddResponse;
+  if (payload.status !== "success" || payload.result === null) {
+    logRecognition(false);
+    return null;
+  }
+
+  const artist = readArtist(payload.result.artist);
+  if (!payload.result.title || !artist) {
+    logRecognition(false);
+    return null;
+  }
+
+  const youtubeVideoId = await findYouTubeVideoId(`${payload.result.title} ${artist} official audio`);
+
+  const result: ProviderSongMetadata = {
+    songName: payload.result.title,
+    artist,
+    album: readAlbum(payload.result.album) || "Unknown Album",
+    genre: "Unknown Genre",
+    releaseYear: getReleaseYear(payload.result.release_date),
+    youtubeVideoId: youtubeVideoId ?? undefined,
+    platformLinks: {
+      youtube: youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : undefined,
+      appleMusic: payload.result.apple_music?.url,
+      spotify: payload.result.spotify?.external_urls?.spotify,
+      preview: payload.result.song_link,
+    },
+  };
+
+  logRecognition(Boolean(youtubeVideoId));
+  return result;
+}
+
+export async function lookupSongByTitleAndArtist(title: string, artist: string): Promise<ProviderSongMetadata | null> {
+  const youtubeVideoId = await findYouTubeVideoId(`${title} ${artist} official audio`);
+
+  if (!youtubeVideoId) {
+    return null;
+  }
+
+  return {
+    songName: title,
+    artist,
+    album: "Unknown Album",
+    genre: "Unknown Genre",
+    releaseYear: null,
+    youtubeVideoId,
+    platformLinks: {
+      youtube: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
+    },
+  };
 }

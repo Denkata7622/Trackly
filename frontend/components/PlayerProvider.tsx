@@ -10,14 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-
-type QueueTrack = {
-  id: string;
-  title: string;
-  artist: string;
-  platform: "youtube";
-  query: string;
-};
+import { upsertTrack, type QueueTrack } from "../features/player/state";
 
 type PlayerContextValue = {
   queue: QueueTrack[];
@@ -26,7 +19,9 @@ type PlayerContextValue = {
   currentTime: number;
   duration: number;
   volume: number;
-  addToQueue: (track: Omit<QueueTrack, "id" | "platform"> & { id?: string }) => void;
+  isInitializing: boolean;
+  playerError: string | null;
+  addToQueue: (track: Omit<QueueTrack, "id"> & { id?: string }) => void;
   togglePlayPause: () => void;
   skipNext: () => void;
   skipPrevious: () => void;
@@ -39,10 +34,9 @@ type YTPlayerLike = {
   pauseVideo: () => void;
   getDuration: () => number;
   getCurrentTime: () => number;
-  nextVideo: () => void;
-  previousVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead?: boolean) => void;
   setVolume: (value: number) => void;
+  loadVideoById: (videoId: string) => void;
 };
 
 type YouTubeWindow = Window & {
@@ -51,7 +45,6 @@ type YouTubeWindow = Window & {
     PlayerState: {
       PLAYING: number;
       PAUSED: number;
-      BUFFERING: number;
       ENDED: number;
       CUED: number;
     };
@@ -59,15 +52,43 @@ type YouTubeWindow = Window & {
   onYouTubeIframeAPIReady?: () => void;
 };
 
+const STORAGE_KEY = "trackly.player.state.v1";
+
+function loadInitialPlayerState() {
+  if (typeof window === "undefined") {
+    return { queue: [] as QueueTrack[], activeIndex: 0, volume: 70 };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return { queue: [] as QueueTrack[], activeIndex: 0, volume: 70 };
+    }
+
+    const parsed = JSON.parse(raw) as { queue?: QueueTrack[]; activeIndex?: number; volume?: number };
+
+    return {
+      queue: Array.isArray(parsed.queue) ? parsed.queue : [],
+      activeIndex: typeof parsed.activeIndex === "number" ? Math.max(0, parsed.activeIndex) : 0,
+      volume: typeof parsed.volume === "number" ? Math.max(0, Math.min(100, parsed.volume)) : 70,
+    };
+  } catch {
+    return { queue: [] as QueueTrack[], activeIndex: 0, volume: 70 };
+  }
+}
+
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const [queue, setQueue] = useState<QueueTrack[]>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const initialState = loadInitialPlayerState();
+  const [queue, setQueue] = useState<QueueTrack[]>(initialState.queue);
+  const [activeIndex, setActiveIndex] = useState(initialState.activeIndex);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [volume, setVolumeState] = useState(70);
+  const [volume, setVolumeState] = useState(initialState.volume);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [playerError, setPlayerError] = useState<string | null>(null);
   const playerRef = useRef<YTPlayerLike | null>(null);
 
   const currentTrack = queue[activeIndex] ?? null;
@@ -75,9 +96,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const ytWindow = window as YouTubeWindow;
-    const existingScript = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        queue,
+        activeIndex,
+        volume,
+      }),
+    );
+  }, [queue, activeIndex, volume]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const ytWindow = window as YouTubeWindow;
     const setupPlayer = () => {
       if (!ytWindow.YT || playerRef.current) return;
 
@@ -95,20 +127,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         events: {
           onReady: () => {
             playerRef.current?.setVolume(volume);
+            setIsInitializing(false);
+            setPlayerError(null);
+          },
+          onError: (event: { data: number }) => {
+            const message = `Playback error (${event.data}).`;
+            setPlayerError(message);
+            console.warn(`[analytics] playback_error code=${event.data}`);
           },
           onStateChange: (event: { data: number }) => {
             const state = ytWindow.YT?.PlayerState;
             if (!state) return;
+
             if (event.data === state.PLAYING) setIsPlaying(true);
-            if (event.data === state.PAUSED || event.data === state.ENDED || event.data === state.CUED) {
+            if (event.data === state.PAUSED || event.data === state.CUED) setIsPlaying(false);
+            if (event.data === state.ENDED) {
               setIsPlaying(false);
+              setActiveIndex((previous) => {
+                const nextIndex = previous + 1;
+                return nextIndex < queue.length ? nextIndex : previous;
+              });
             }
           },
         },
       });
     };
 
-    if (!existingScript) {
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
       const script = document.createElement("script");
       script.src = "https://www.youtube.com/iframe_api";
       document.body.appendChild(script);
@@ -125,21 +170,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => {
       ytWindow.onYouTubeIframeAPIReady = previousHandler;
     };
-  }, [volume]);
+  }, [queue.length, volume]);
 
   useEffect(() => {
     if (!playerRef.current || !currentTrack) return;
 
-    const playerFrame = document.getElementById("trackly-hidden-yt-player") as HTMLIFrameElement | null;
-    if (playerFrame) {
-      playerFrame.src = `https://www.youtube.com/embed?enablejsapi=1&autoplay=1&listType=search&list=${encodeURIComponent(
-        currentTrack.query,
-      )}`;
+    if (!currentTrack.videoId) {
+      console.warn("[analytics] playback_error reason=no_verified_video_id");
+      return;
     }
+
+    playerRef.current.loadVideoById(currentTrack.videoId);
 
     const startPlayback = window.setTimeout(() => {
       playerRef.current?.playVideo();
-    }, 500);
+    }, 250);
 
     return () => window.clearTimeout(startPlayback);
   }, [currentTrack]);
@@ -154,55 +199,34 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(interval);
   }, []);
 
-  const addToQueue = useCallback((track: Omit<QueueTrack, "id" | "platform"> & { id?: string }) => {
+  const addToQueue = useCallback((track: Omit<QueueTrack, "id"> & { id?: string }) => {
     const queueTrack: QueueTrack = {
-      id: track.id ?? `${track.title}-${track.artist}-${Date.now()}`,
+      id: track.id ?? `${track.title}-${track.artist}`.toLowerCase().replace(/\s+/g, "-"),
       title: track.title,
       artist: track.artist,
       query: track.query,
-      platform: "youtube",
+      videoId: track.videoId,
     };
 
     setQueue((previousQueue) => {
-      const nextQueue = [...previousQueue, queueTrack];
-      if (nextQueue.length === 1) {
-        setActiveIndex(0);
-      } else {
-        setActiveIndex(nextQueue.length - 1);
-      }
-      return nextQueue;
+      const result = upsertTrack(previousQueue, queueTrack);
+      setActiveIndex(result.activeIndex);
+      return result.queue;
     });
   }, []);
 
   const togglePlayPause = useCallback(() => {
-    if (!playerRef.current) return;
-
-    if (isPlaying) {
-      playerRef.current.pauseVideo();
-      return;
-    }
-    playerRef.current.playVideo();
-  }, [isPlaying]);
+    if (!playerRef.current || !currentTrack) return;
+    if (isPlaying) playerRef.current.pauseVideo();
+    else playerRef.current.playVideo();
+  }, [currentTrack, isPlaying]);
 
   const skipNext = useCallback(() => {
-    setActiveIndex((prev) => {
-      const nextIndex = prev + 1;
-      if (nextIndex >= queue.length) {
-        playerRef.current?.nextVideo();
-        return prev;
-      }
-      return nextIndex;
-    });
+    setActiveIndex((previous) => Math.min(previous + 1, Math.max(0, queue.length - 1)));
   }, [queue.length]);
 
   const skipPrevious = useCallback(() => {
-    setActiveIndex((prev) => {
-      if (prev === 0) {
-        playerRef.current?.previousVideo();
-        return prev;
-      }
-      return prev - 1;
-    });
+    setActiveIndex((previous) => Math.max(previous - 1, 0));
   }, []);
 
   const seekToPercent = useCallback(
@@ -216,12 +240,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   );
 
   const setVolume = useCallback((nextVolume: number) => {
-    const safeVolume = Math.max(0, Math.min(100, nextVolume));
-    setVolumeState(safeVolume);
-    playerRef.current?.setVolume(safeVolume);
+    const normalized = Math.max(0, Math.min(100, nextVolume));
+    setVolumeState(normalized);
+    playerRef.current?.setVolume(normalized);
   }, []);
 
-  const value = useMemo(
+  const contextValue = useMemo<PlayerContextValue>(
     () => ({
       queue,
       currentTrack,
@@ -229,6 +253,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       currentTime,
       duration,
       volume,
+      isInitializing,
+      playerError,
       addToQueue,
       togglePlayPause,
       skipNext,
@@ -236,18 +262,28 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       seekToPercent,
       setVolume,
     }),
-    [queue, currentTrack, isPlaying, currentTime, duration, volume, addToQueue, togglePlayPause, skipNext, skipPrevious, seekToPercent, setVolume],
+    [
+      queue,
+      currentTrack,
+      isPlaying,
+      currentTime,
+      duration,
+      volume,
+      isInitializing,
+      playerError,
+      addToQueue,
+      togglePlayPause,
+      skipNext,
+      skipPrevious,
+      seekToPercent,
+      setVolume,
+    ],
   );
 
   return (
-    <PlayerContext.Provider value={value}>
+    <PlayerContext.Provider value={contextValue}>
       {children}
-      <iframe
-        id="trackly-hidden-yt-player"
-        title="Trackly hidden YouTube player"
-        className="pointer-events-none fixed bottom-0 right-0 h-px w-px opacity-0"
-        allow="autoplay"
-      />
+      <div id="trackly-hidden-yt-player" className="pointer-events-none fixed -left-[9999px] top-0 h-px w-px" aria-hidden />
     </PlayerContext.Provider>
   );
 }

@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import LibrarySidebar from "../components/LibrarySidebar";
+import { usePlayer } from "../components/PlayerProvider";
 import TrackCard from "../components/TrackCard";
 import { useLibrary } from "../features/library/useLibrary";
-import { recognizeFromAudio, recognizeFromImage, type SongRecognitionResult } from "../features/recognition/api";
+import { recognizeFromAudio, recognizeFromImage, RecognitionError, type SongRecognitionResult } from "../features/recognition/api";
 import { recentTracksSeed } from "../features/tracks/seed";
 import type { Track } from "../features/tracks/types";
 
@@ -24,6 +25,8 @@ export default function Home() {
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [recognitionPhase, setRecognitionPhase] = useState<"idle" | "recording" | "recognizing" | "verifying">("idle");
+  const [historyTracks, setHistoryTracks] = useState<Track[]>([]);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { addToQueue } = usePlayer();
@@ -35,12 +38,40 @@ export default function Home() {
     const recognizedTrack = result ? [toRecognizedTrack(result)] : [];
     const uniqueTracks = new Map<string, Track>();
 
-    [...recognizedTrack, ...recentTracksSeed].forEach((track) => {
+    [...recognizedTrack, ...historyTracks, ...recentTracksSeed].forEach((track) => {
       uniqueTracks.set(track.id, track);
     });
 
     return [...uniqueTracks.values()];
-  }, [result]);
+  }, [historyTracks, result]);
+
+  useEffect(() => {
+    const API_BASE_URL =
+      process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
+
+    void fetch(`${API_BASE_URL}/api/history?limit=10`)
+      .then(async (response) => {
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          items?: Array<{ id: string; songName: string; artist: string; youtubeVideoId?: string }>;
+        };
+
+        const mapped = (payload.items || []).map((item) => ({
+          id: `history-${item.id}`,
+          title: item.songName,
+          artistName: item.artist,
+          artistId: `artist-${item.artist}`.toLowerCase().replace(/\s+/g, "-"),
+          artworkUrl: "https://picsum.photos/seed/history/80",
+          license: "COPYRIGHTED" as const,
+          youtubeVideoId: item.youtubeVideoId,
+        }));
+
+        setHistoryTracks(mapped);
+      })
+      .catch(() => {
+        // keep local list if backend history is unavailable
+      });
+  }, []);
 
   async function recordAudioClip(durationMs: number): Promise<Blob> {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -71,14 +102,16 @@ export default function Home() {
     });
   }
 
-
-  function handlePlayRecognizedSong() {
-    if (!result) return;
+  function handlePlayTrack(track: Track) {
+    const isRecognizedTrack = result && track.id === toRecognizedTrack(result).id;
+    const videoId = isRecognizedTrack ? result.youtubeVideoId : track.youtubeVideoId;
 
     addToQueue({
-      title: result.songName,
-      artist: result.artist,
-      query: `${result.songName} ${result.artist} official audio`,
+      id: track.id,
+      title: track.title,
+      artist: track.artistName,
+      videoId,
+      query: `${track.title} ${track.artistName} official audio`,
     });
   }
 
@@ -88,15 +121,23 @@ export default function Home() {
     setErrorMessage(null);
     setResult(null);
     setIsLoadingAudio(true);
+    setRecognitionPhase("recording");
 
     try {
       const audioBlob = await recordAudioClip(6000);
+      setRecognitionPhase("recognizing");
       const recognized = await recognizeFromAudio(audioBlob);
-      setResult(recognized);
+      setRecognitionPhase("verifying");
+      setResult(recognized.primaryMatch);
     } catch (error) {
-      setErrorMessage((error as Error).message || "Could not recognize from audio.");
+      if (error instanceof RecognitionError && error.code === "NO_VERIFIED_RESULT") {
+        setErrorMessage("Recognition worked, but no verified YouTube track was found. Try a cleaner sample.");
+      } else {
+        setErrorMessage((error as Error).message || "Could not recognize from audio.");
+      }
     } finally {
       setIsLoadingAudio(false);
+      setRecognitionPhase("idle");
     }
   }
 
@@ -112,80 +153,120 @@ export default function Home() {
     setErrorMessage(null);
     setResult(null);
     setIsLoadingImage(true);
+    setRecognitionPhase("recognizing");
 
     try {
+      setRecognitionPhase("verifying");
       const recognized = await recognizeFromImage(file);
       setResult(recognized);
     } catch (error) {
-      setErrorMessage((error as Error).message || "Could not recognize from photo.");
+      if (error instanceof RecognitionError && error.code === "NO_VERIFIED_RESULT") {
+        setErrorMessage("Text was detected, but no verified YouTube match was found for it.");
+      } else {
+        setErrorMessage((error as Error).message || "Could not recognize from photo.");
+      }
     } finally {
       setIsLoadingImage(false);
+      setRecognitionPhase("idle");
       event.target.value = "";
     }
   }
 
   return (
-    <main className="min-h-screen">
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-4xl font-semibold text-white">Trackly Recognition</h1>
-          <button
-            type="button"
-            className="rounded border border-white/20 px-3 py-2 text-sm hover:bg-white/10"
-            onClick={() => setIsLibraryOpen((prev) => !prev)}
-          >
-            {isLibraryOpen ? "Hide Library" : "Show Library"}
-          </button>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_right,#351f5f,transparent_45%),radial-gradient(circle_at_top_left,#0f3f4f,transparent_40%),#090b11]">
+      <div className="mx-auto max-w-6xl px-6 py-10">
+        <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-violet-200/80">Trackly • Recognize + Verify + Play</p>
+              <h1 className="mt-1 text-4xl font-semibold text-white">Trackly Recognition</h1>
+            </div>
+            <button
+              type="button"
+              className="rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm text-white/90 hover:bg-white/10"
+              onClick={() => setIsLibraryOpen((prev) => !prev)}
+            >
+              {isLibraryOpen ? "Hide Library" : "Show Library"}
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <p className="text-xs text-white/60">Songs in list</p>
+              <p className="mt-1 text-lg font-semibold">{tracks.length}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <p className="text-xs text-white/60">Favorites</p>
+              <p className="mt-1 text-lg font-semibold">{favoritesSet.size}</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+              <p className="text-xs text-white/60">Recognition mode</p>
+              <p className="mt-1 text-lg font-semibold capitalize">{recognitionPhase}</p>
+            </div>
+          </div>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
           <section>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <button
-                id="recognizeAudioBtn"
-                onClick={handleRecognizeAudio}
-                disabled={isLoadingAudio || isLoadingImage}
-                className="primaryBtn"
-              >
-                {isLoadingAudio ? "Listening and recognizing..." : "Recognize with microphone"}
-              </button>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  id="recognizeAudioBtn"
+                  onClick={handleRecognizeAudio}
+                  disabled={isLoadingAudio || isLoadingImage}
+                  className="rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 px-4 py-3 text-sm font-medium text-white shadow-lg shadow-violet-900/30 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isLoadingAudio ? "Listening and recognizing..." : "Recognize with microphone"}
+                </button>
 
-              <button
-                id="uploadPhotoBtn"
-                onClick={handleUploadPhotoClick}
-                disabled={isLoadingAudio || isLoadingImage}
-                className="secondaryBtn"
-              >
-                {isLoadingImage ? "Uploading photo..." : "Upload photo (OCR)"}
-              </button>
+                <button
+                  id="uploadPhotoBtn"
+                  onClick={handleUploadPhotoClick}
+                  disabled={isLoadingAudio || isLoadingImage}
+                  className="rounded-xl border border-cyan-300/40 bg-cyan-500/10 px-4 py-3 text-sm font-medium text-cyan-100 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isLoadingImage ? "Uploading photo..." : "Upload photo (OCR)"}
+                </button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelected}
+                className="hidden"
+              />
+
+              {(isLoadingAudio || isLoadingImage) && (
+                <p className="mt-4 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/75">
+                  {recognitionPhase === "recording" && "🎙 Recording audio sample..."}
+                  {recognitionPhase === "recognizing" && "🧠 Recognizing song..."}
+                  {recognitionPhase === "verifying" && "✅ Verifying platform availability..."}
+                  {recognitionPhase === "idle" && "Processing request, please wait..."}
+                </p>
+              )}
+
+              {errorMessage && (
+                <p className="mt-4 rounded-lg border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {errorMessage}
+                </p>
+              )}
             </div>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageSelected}
-              className="hidden"
-            />
-
-            {(isLoadingAudio || isLoadingImage) && (
-              <p className="mt-4 text-sm text-white/70">Processing request, please wait...</p>
-            )}
-
-            {errorMessage && <p className="mt-4 text-sm text-red-300">{errorMessage}</p>}
-
             {result && (
-              <div className="mt-8 rounded-xl border border-white/15 bg-white/5 p-6">
+              <div className="mt-6 rounded-2xl border border-violet-300/25 bg-gradient-to-br from-violet-500/15 to-cyan-500/10 p-6">
                 <h2 className="mb-4 text-xl font-medium text-white">Recognition Result</h2>
-                <p className="text-white/90">
-                  <strong>Song:</strong> {result.songName}
-                </p>
-                <p className="mt-2 text-white/90">
-                  <strong>Artist:</strong> {result.artist}
-                </p>
-                <p className="mt-2 text-white/90">
-                  <strong>Album:</strong> {result.album}
-                </p>
+                <div className="space-y-2 text-white/90">
+                  <p>
+                    <strong>Song:</strong> {result.songName}
+                  </p>
+                  <p>
+                    <strong>Artist:</strong> {result.artist}
+                  </p>
+                  <p>
+                    <strong>Album:</strong> {result.album}
+                  </p>
+                </div>
               </div>
             )}
 
@@ -203,6 +284,7 @@ export default function Home() {
                     createPlaylist(name);
                   }}
                   onDeletePlaylist={deletePlaylist}
+                  onPlayTrack={handlePlayTrack}
                 />
               ))}
             </div>
