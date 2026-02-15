@@ -6,6 +6,7 @@ import { errorMiddleware } from "./middlewares/error.middleware";
 import authRouter from "./modules/auth/auth.routes";
 import historyRouter from "./modules/history/history.routes";
 import recognitionRouter from "./modules/recognition/recognition.routes";
+import { recognitionRateLimit } from "./middlewares/rateLimit.middleware";
 
 const app = express();
 

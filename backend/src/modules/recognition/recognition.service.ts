@@ -22,7 +22,14 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
-function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
+function enrichSong(song: SongMetadata, confidence: number): SongMatch {
+  const seed = buildSeed(song);
+  const genre = GENRES[seed % GENRES.length];
+  const releaseYear = 1998 + (seed % 27);
+  const durationSec = 140 + (seed % 140);
+  const artistSlug = slugify(song.artist);
+  const songSlug = slugify(song.songName);
+
   return {
     ...metadata,
     genre: "Unknown Genre",
@@ -41,7 +48,12 @@ function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   };
 }
 
-function parseFromFilename(filename: string): OcrCandidateMetadata {
+function cleanValue(value?: string): string {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : "";
+}
+
+function parseFromFilename(filename: string): SongMetadata {
   const cleaned = filename.replace(/\.[^/.]+$/, "").replace(/[_]+/g, " ").trim();
   const separators = [" - ", " – ", " — "];
 
@@ -86,7 +98,7 @@ async function recognizeFromLocalTags(buffer: Buffer, originalName: string): Pro
     // fall through to filename parser
   }
 
-  return toFallbackResponse(parseFromFilename(originalName));
+  throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
 }
 
 export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
