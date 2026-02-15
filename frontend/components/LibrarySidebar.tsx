@@ -4,6 +4,7 @@ import type { Track } from "../features/tracks/types";
 type LibrarySidebarProps = {
   playlists: Playlist[];
   tracks: Track[];
+  favoritesSet?: Set<string>;
 };
 
 export default function LibrarySidebar({ playlists, tracks }: LibrarySidebarProps) {
