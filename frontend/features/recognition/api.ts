@@ -25,13 +25,12 @@ export type ImageRecognitionResult = {
   language: string;
 };
 
-// Unified shape used by the UI (page.tsx, TrackCard, etc.)
 export type SongRecognitionResult = {
   songName: string;
   artist: string;
   album: string;
   genre: string;
-  releaseYear: number;
+  releaseYear: number | null;
   platformLinks: {
     youtube?: string;
     appleMusic?: string;
@@ -39,14 +38,8 @@ export type SongRecognitionResult = {
     preview?: string;
   };
   youtubeVideoId?: string;
-  releaseYear: number | null;
   source: "provider" | "ocr_fallback";
   verificationStatus?: "verified" | "not_found";
-};
-
-export type AudioRecognitionResult = {
-  primaryMatch: SongRecognitionResult;
-  alternatives: SongRecognitionResult[];
 };
 
 export class RecognitionError extends Error {
@@ -62,7 +55,13 @@ export class RecognitionError extends Error {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
 
-async function postMultipart<T>(endpoint: string, fieldName: string, file: Blob, filename: string): Promise<T> {
+async function postMultipart<T>(
+  endpoint: string,
+  fieldName: string,
+  file: Blob,
+  filename: string,
+  extraFields?: Record<string, string>,
+): Promise<T> {
   const formData = new FormData();
   formData.append(fieldName, file, filename);
 
@@ -98,7 +97,7 @@ async function postMultipart<T>(endpoint: string, fieldName: string, file: Blob,
 }
 
 export async function recognizeFromAudio(audioBlob: Blob): Promise<AudioRecognitionResult> {
-  const primary = await postMultipart<SongRecognitionResult>(
+  const primary = await postMultipart<SongMatch>(
     "/api/recognition/audio",
     "audio",
     audioBlob,
@@ -111,15 +110,11 @@ export async function recognizeFromAudio(audioBlob: Blob): Promise<AudioRecognit
   };
 }
 
-export async function recognizeFromImage(imageFile: File): Promise<SongRecognitionResult> {
-  return postMultipart<SongRecognitionResult>("/api/recognition/image", "image", imageFile, imageFile.name);
-}
-
 export async function recognizeFromImage(
   imageFile: File,
   maxSongs = 10,
   language = "eng",
-): Promise<SongRecognitionResult> {
+): Promise<SongMatch> {
   const raw = await postMultipart<ImageRecognitionResult>(
     "/api/recognition/image",
     "image",
@@ -130,5 +125,5 @@ export async function recognizeFromImage(
 
   const top = raw.songs[0];
   if (!top) throw new Error("No songs detected in the image.");
-  return matchToResult(top, "image");
+  return top;
 }

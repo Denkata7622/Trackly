@@ -20,7 +20,7 @@ function toRecognizedTrack(result: SongRecognitionResult): Track {
   };
 }
 
-export default function Home() {
+export default function Page() {
   const [result, setResult] = useState<SongRecognitionResult | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
@@ -172,7 +172,6 @@ export default function Home() {
     }
   }
 
-export default function Page() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_right,#351f5f,transparent_45%),radial-gradient(circle_at_top_left,#0f3f4f,transparent_40%),#090b11]">
       <div className="mx-auto max-w-6xl px-6 py-10">
