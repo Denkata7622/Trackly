@@ -1,11 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import BottomPlayBar from "./BottomPlayBar";
 import { PlayerProvider } from "./PlayerProvider";
 
+const NAV_ITEMS = [
+  { href: "/", label: "🎧 App" },
+  { href: "/idea", label: "💡 Idea" },
+  { href: "/how-to-use", label: "📘 How to use" },
+  { href: "/founders", label: "👥 Founders" },
+  { href: "/concept", label: "🧠 Concept" },
+  { href: "/the-future", label: "💡 The Future" },
+];
+
 export default function AppShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
   return (
     <PlayerProvider>
       <div className="flex min-h-screen">
@@ -24,24 +36,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </Link>
 
           <nav className="flex flex-col gap-2 text-base">
-            <Link className="navItem" href="/">
-              🎧 App
-            </Link>
-            <Link className="navItem" href="/idea">
-              💡 Idea
-            </Link>
-            <Link className="navItem" href="/how-to-use">
-              📘 How to use
-            </Link>
-            <Link className="navItem" href="/founders">
-              👥 Founders
-            </Link>
-            <Link className="navItem" href="/concept">
-              🧠 Concept
-            </Link>
-            <Link className="navItem" href="/the-future">
-              💡 The Future
-            </Link>
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.href}
+                className={pathname === item.href ? "navItemActive" : "navItem"}
+                href={item.href}
+              >
+                {item.label}
+              </Link>
+            ))}
           </nav>
         </aside>
 

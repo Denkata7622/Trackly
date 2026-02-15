@@ -9,7 +9,10 @@
     "lint": "npm run lint --prefix frontend",
     "setup": "npm install --prefix backend && npm install --prefix frontend",
     "clean": "node ./scripts/clean.mjs",
-    "reset": "npm run clean && npm run setup"
+    "reset": "npm run clean && npm run setup",
+    "test": "node --test --experimental-strip-types \"backend/tests/**/*.test.ts\" \"frontend/tests/**/*.test.ts\"",
+    "test:backend": "node --test --experimental-strip-types \"backend/tests/**/*.test.ts\"",
+    "check:backend": "node scripts/backend-validate.mjs && npm run test:backend"
   },
   "dependencies": {
     "concurrently": "^9.2.1",

@@ -7,4 +7,5 @@ export type Track = {
   artistId: string;
   artworkUrl: string;
   license: License;
+  youtubeVideoId?: string;
 };
