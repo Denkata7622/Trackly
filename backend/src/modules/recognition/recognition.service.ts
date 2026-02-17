@@ -39,6 +39,9 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
+
+const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash-latest"];
+
 const VISION_SYSTEM_PROMPT = `You are extracting music metadata from images. The user sent a
 screenshot or photo showing a song. Extract the song title and
 artist name. Respond with ONLY valid JSON in this format:
@@ -103,36 +106,51 @@ async function extractMetadataWithGeminiVision(buffer: Buffer): Promise<OcrCandi
   }
 
   const imageBase64 = buffer.toString("base64");
-  const endpoint =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
 
-  const response = await fetch(`${endpoint}?key=${encodeURIComponent(geminiApiKey)}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: VISION_SYSTEM_PROMPT },
-            {
-              inline_data: {
-                mime_type: "image/jpeg",
-                data: imageBase64,
+  let payload: GeminiResponse | null = null;
+  let lastStatus = 0;
+
+  for (const model of GEMINI_MODELS) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": geminiApiKey,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: VISION_SYSTEM_PROMPT },
+              {
+                inline_data: {
+                  mime_type: "image/jpeg",
+                  data: imageBase64,
+                },
               },
-            },
-          ],
-        },
-      ],
-    }),
-  });
+            ],
+          },
+        ],
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`Gemini API failed with status ${response.status}`);
+    if (response.ok) {
+      payload = (await response.json()) as GeminiResponse;
+      break;
+    }
+
+    lastStatus = response.status;
+
+    if (response.status !== 404) {
+      throw new Error(`Gemini API failed with status ${response.status}`);
+    }
   }
 
-  const payload = (await response.json()) as GeminiResponse;
+  if (!payload) {
+    throw new Error(`Gemini API failed with status ${lastStatus || 404}`);
+  }
+
   const textContent = payload.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!payload.candidates || payload.candidates.length === 0 || !textContent) {
