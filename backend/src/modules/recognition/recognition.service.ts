@@ -1,5 +1,5 @@
-import { parseBuffer } from "music-metadata";
 import Tesseract from "tesseract.js";
+import { GEMINI_API_KEY } from "../../config/env";
 import { parseOcrCandidateText, type OcrCandidateMetadata } from "./ocr-parser";
 import {
   lookupSongByTitleAndArtist,
@@ -13,6 +13,23 @@ export type SongMetadata = ProviderSongMetadata & {
   verificationStatus: "verified" | "not_found";
 };
 
+type VisionExtraction = {
+  songName: string;
+  artist: string;
+  album: string;
+  confidence: number;
+};
+
+type GeminiResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+};
+
 const UNKNOWN_METADATA: OcrCandidateMetadata = {
   songName: "Unknown Song",
   artist: "Unknown Artist",
@@ -22,23 +39,16 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
-function enrichSong(song: SongMetadata, confidence: number): SongMatch {
-  const seed = buildSeed(song);
-  const genre = GENRES[seed % GENRES.length];
-  const releaseYear = 1998 + (seed % 27);
-  const durationSec = 140 + (seed % 140);
-  const artistSlug = slugify(song.artist);
-  const songSlug = slugify(song.songName);
 
-  return {
-    ...metadata,
-    genre: "Unknown Genre",
-    platformLinks: {},
-    releaseYear: null,
-    source: "ocr_fallback",
-    verificationStatus: "not_found",
-  };
-}
+const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash-latest"];
+
+const VISION_SYSTEM_PROMPT = `You are extracting music metadata from images. The user sent a
+screenshot or photo showing a song. Extract the song title and
+artist name. Respond with ONLY valid JSON in this format:
+{"songName":"exact title","artist":"exact artist","album":"album or empty","confidence":0.95}
+If you cannot identify a song, return:
+{"songName":"","artist":"","album":"","confidence":0}
+No markdown, no explanation, only the JSON object.`;
 
 function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   return {
@@ -48,57 +58,138 @@ function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   };
 }
 
-function cleanValue(value?: string): string {
-  const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : "";
-}
-
-function parseFromFilename(filename: string): SongMetadata {
-  const cleaned = filename.replace(/\.[^/.]+$/, "").replace(/[_]+/g, " ").trim();
-  const separators = [" - ", " – ", " — "];
-
-  for (const separator of separators) {
-    if (cleaned.includes(separator)) {
-      const [artist, title] = cleaned.split(separator).map((part) => part.trim());
-      if (title && artist) {
-        return {
-          ...UNKNOWN_METADATA,
-          songName: title,
-          artist,
-        };
-      }
-    }
-  }
-
+function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
   return {
-    ...UNKNOWN_METADATA,
-    songName: cleaned || UNKNOWN_METADATA.songName,
+    songName: metadata.songName,
+    artist: metadata.artist,
+    album: metadata.album,
+    genre: "Unknown Genre",
+    platformLinks: {},
+    youtubeVideoId: undefined,
+    releaseYear: null,
+    source: "ocr_fallback",
+    verificationStatus: "not_found",
   };
 }
 
-async function preprocessImage(buffer: Buffer): Promise<Buffer> {
-  return buffer;
-}
+function parseVisionJsonResponse(text: string): VisionExtraction {
+  const withoutFences = text
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
 
-async function recognizeFromLocalTags(buffer: Buffer, originalName: string): Promise<SongMetadata> {
+  const jsonCandidate = withoutFences.startsWith("{")
+    ? withoutFences
+    : (withoutFences.match(/\{[\s\S]*\}/)?.[0] ?? "");
+
+  let parsed: Partial<VisionExtraction>;
   try {
-    const metadata = await parseBuffer(buffer);
-    const songName = metadata.common.title?.trim();
-    const artist = metadata.common.artist?.trim();
-    const album = metadata.common.album?.trim();
-
-    if (songName || artist || album) {
-      return toFallbackResponse({
-        songName: songName || UNKNOWN_METADATA.songName,
-        artist: artist || UNKNOWN_METADATA.artist,
-        album: album || UNKNOWN_METADATA.album,
-      });
-    }
+    parsed = JSON.parse(jsonCandidate) as Partial<VisionExtraction>;
   } catch {
-    // fall through to filename parser
+    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
   }
 
-  throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
+  return {
+    songName: typeof parsed.songName === "string" ? parsed.songName.trim() : "",
+    artist: typeof parsed.artist === "string" ? parsed.artist.trim() : "",
+    album: typeof parsed.album === "string" ? parsed.album.trim() : "",
+    confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
+  };
+}
+
+async function extractMetadataWithGeminiVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
+  const geminiApiKey = process.env.GEMINI_API_KEY?.trim() || GEMINI_API_KEY.trim();
+  if (!geminiApiKey) {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+
+  const imageBase64 = buffer.toString("base64");
+
+  let payload: GeminiResponse | null = null;
+  let lastStatus = 0;
+
+  for (const model of GEMINI_MODELS) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": geminiApiKey,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: VISION_SYSTEM_PROMPT },
+              {
+                inline_data: {
+                  mime_type: "image/jpeg",
+                  data: imageBase64,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (response.ok) {
+      payload = (await response.json()) as GeminiResponse;
+      break;
+    }
+
+    lastStatus = response.status;
+
+    if (response.status !== 404) {
+      throw new Error(`Gemini API failed with status ${response.status}`);
+    }
+  }
+
+  if (!payload) {
+    throw new Error(`Gemini API failed with status ${lastStatus || 404}`);
+  }
+
+  const textContent = payload.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!payload.candidates || payload.candidates.length === 0 || !textContent) {
+    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
+  }
+
+  const extracted = parseVisionJsonResponse(textContent);
+
+  if (!extracted.songName || !extracted.artist) {
+    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
+  }
+
+  return {
+    songName: extracted.songName,
+    artist: extracted.artist,
+    album: extracted.album || UNKNOWN_METADATA.album,
+  };
+}
+
+async function extractMetadataWithOcrFallback(buffer: Buffer, language = "eng"): Promise<OcrCandidateMetadata> {
+  const worker = await Tesseract.createWorker(language);
+
+  await worker.setParameters({
+    tessedit_char_whitelist: OCR_CHAR_WHITELIST,
+    preserve_interword_spaces: "1",
+  });
+
+  try {
+    const ocrResult = await worker.recognize(buffer);
+    const candidate = parseOcrCandidateText(ocrResult.data.text, UNKNOWN_METADATA.album);
+
+    if (!candidate) {
+      throw new NoVerifiedResultError("Could not parse a valid Song - Artist pair from the uploaded image.");
+    }
+
+    return candidate;
+  } finally {
+    await worker.terminate();
+  }
 }
 
 export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
@@ -111,33 +202,24 @@ export async function recognizeSongFromAudio(buffer: Buffer, originalName: strin
   throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
 }
 
-export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): Promise<SongMetadata> {
-  const preprocessedImage = await preprocessImage(buffer);
-  const worker = await Tesseract.createWorker(language);
-
-  await worker.setParameters({
-    tessedit_char_whitelist: OCR_CHAR_WHITELIST,
-    preserve_interword_spaces: "1",
-  });
+export async function recognizeSongFromImage(buffer: Buffer, fallbackLanguage = "eng"): Promise<SongMetadata> {
+  let candidate: OcrCandidateMetadata;
 
   try {
-    const ocrResult = await worker.recognize(preprocessedImage);
-    const candidate = parseOcrCandidateText(ocrResult.data.text, UNKNOWN_METADATA.album);
-
-    if (!candidate) {
-      throw new NoVerifiedResultError("Could not parse a valid Song - Artist pair from the uploaded image.");
+    candidate = await extractMetadataWithGeminiVision(buffer);
+  } catch (error) {
+    if (error instanceof NoVerifiedResultError) {
+      throw error;
     }
 
-    const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
-
-    if (!providerResult) {
-      throw new NoVerifiedResultError("No verified YouTube result found for the OCR track candidate.");
-    }
-
-    return toProviderResponse(providerResult);
-  } finally {
-    await worker.terminate();
+    console.warn(`[recognition] Gemini Vision failed; falling back to Tesseract OCR: ${(error as Error).message}`);
+    candidate = await extractMetadataWithOcrFallback(buffer, fallbackLanguage);
   }
-}
 
-export { recognizeFromLocalTags };
+  const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
+  if (providerResult) {
+    return toProviderResponse(providerResult);
+  }
+
+  return toFallbackResponse(candidate);
+}

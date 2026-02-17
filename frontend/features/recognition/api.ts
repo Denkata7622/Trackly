@@ -2,51 +2,35 @@ export type SongMatch = {
   songName: string;
   artist: string;
   album: string;
-  confidence: number;
-  albumArtUrl: string;
-  releaseYear: number;
   genre: string;
-  durationSec: number;
-  platformLinks: {
-    spotify: string;
-    appleMusic: string;
-    youtubeMusic: string;
-  };
-};
-
-export type AudioRecognitionResult = {
-  primaryMatch: SongMatch;
-  alternatives: SongMatch[];
-};
-
-export type ImageRecognitionResult = {
-  songs: SongMatch[];
-  count: number;
-  language: string;
-};
-
-// Unified shape used by the UI (page.tsx, TrackCard, etc.)
-export type SongRecognitionResult = {
-  songName: string;
-  artist: string;
-  album: string;
-  genre: string;
-  releaseYear: number;
+  releaseYear: number | null;
   platformLinks: {
     youtube?: string;
+    youtubeMusic?: string;
     appleMusic?: string;
     spotify?: string;
     preview?: string;
   };
   youtubeVideoId?: string;
-  releaseYear: number | null;
-  source: "provider" | "ocr_fallback";
+  albumArtUrl: string;
+  confidence: number;
+  durationSec: number;
+};
+
+export type SongRecognitionResult = SongMatch & {
+  source?: "provider" | "ocr_fallback" | "audio" | "image";
   verificationStatus?: "verified" | "not_found";
 };
 
 export type AudioRecognitionResult = {
   primaryMatch: SongRecognitionResult;
   alternatives: SongRecognitionResult[];
+};
+
+export type ImageRecognitionResult = {
+  songs: SongRecognitionResult[];
+  count: number;
+  language: string;
 };
 
 export class RecognitionError extends Error {
@@ -59,10 +43,15 @@ export class RecognitionError extends Error {
   }
 }
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
 
-async function postMultipart<T>(endpoint: string, fieldName: string, file: Blob, filename: string): Promise<T> {
+async function postMultipart<T>(
+  endpoint: string,
+  fieldName: string,
+  file: Blob,
+  filename: string,
+  extraFields?: Record<string, string>,
+): Promise<T> {
   const formData = new FormData();
   formData.append(fieldName, file, filename);
 
@@ -83,12 +72,10 @@ async function postMultipart<T>(endpoint: string, fieldName: string, file: Blob,
 
     try {
       const errorPayload = (await response.json()) as { message?: string; code?: string };
-      if (errorPayload.message) {
-        message = errorPayload.message;
-      }
+      if (errorPayload.message) message = errorPayload.message;
       code = errorPayload.code;
     } catch {
-      // ignore
+      // no-op
     }
 
     throw new RecognitionError(message, code);
@@ -98,37 +85,27 @@ async function postMultipart<T>(endpoint: string, fieldName: string, file: Blob,
 }
 
 export async function recognizeFromAudio(audioBlob: Blob): Promise<AudioRecognitionResult> {
-  const primary = await postMultipart<SongRecognitionResult>(
-    "/api/recognition/audio",
-    "audio",
-    audioBlob,
-    "recording.webm",
-  );
+  const primary = await postMultipart<SongRecognitionResult>("/api/recognition/audio", "audio", audioBlob, "recording.webm");
+  return { primaryMatch: normalizeSong(primary), alternatives: [] };
+}
 
+function normalizeSong(result: SongRecognitionResult): SongRecognitionResult {
   return {
-    primaryMatch: primary,
-    alternatives: [],
+    ...result,
+    albumArtUrl: result.albumArtUrl || "https://picsum.photos/seed/recognized/120",
+    confidence: typeof result.confidence === "number" ? result.confidence : 1,
+    durationSec: typeof result.durationSec === "number" ? result.durationSec : 0,
   };
 }
 
-export async function recognizeFromImage(imageFile: File): Promise<SongRecognitionResult> {
-  return postMultipart<SongRecognitionResult>("/api/recognition/image", "image", imageFile, imageFile.name);
-}
 
 export async function recognizeFromImage(
   imageFile: File,
-  maxSongs = 10,
+  maxSongs = 1,
   language = "eng",
-): Promise<SongRecognitionResult> {
-  const raw = await postMultipart<ImageRecognitionResult>(
-    "/api/recognition/image",
-    "image",
-    imageFile,
-    imageFile.name,
-    { maxSongs: String(maxSongs), language },
-  );
+): Promise<ImageRecognitionResult> {
+  const result = await postMultipart<SongRecognitionResult>("/api/recognition/image", "image", imageFile, imageFile.name);
 
-  const top = raw.songs[0];
-  if (!top) throw new Error("No songs detected in the image.");
-  return matchToResult(top, "image");
+  const songs = [normalizeSong(result)].slice(0, Math.max(1, maxSongs));
+  return { songs, count: songs.length, language };
 }

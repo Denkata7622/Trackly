@@ -1,4 +1,60 @@
+import fs from "fs";
+import path from "path";
+
+export const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
+
+function parseEnvFile(content: string): Record<string, string> {
+  const parsed: Record<string, string> = {};
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const equalsIndex = line.indexOf("=");
+    if (equalsIndex <= 0) continue;
+
+    const key = line.slice(0, equalsIndex).trim();
+    let value = line.slice(equalsIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    parsed[key] = value;
+  }
+
+  return parsed;
+}
+
+function loadEnvironmentFiles(): void {
+  const backendRoot = path.resolve(__dirname, "..", "..");
+  const projectRoot = path.resolve(backendRoot, "..");
+
+  const candidateFiles = [
+    path.join(projectRoot, ".env.local"),
+    path.join(projectRoot, ".env"),
+    path.join(backendRoot, ".env.local"),
+    path.join(backendRoot, ".env"),
+  ];
+
+  for (const filePath of candidateFiles) {
+    if (!fs.existsSync(filePath)) continue;
+
+    const envValues = parseEnvFile(fs.readFileSync(filePath, "utf8"));
+    for (const [key, value] of Object.entries(envValues)) {
+      if (!process.env[key]) {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 export function validateEnvironment(): void {
+  loadEnvironmentFiles();
+
   const auddToken = process.env.AUDD_API_TOKEN?.trim() || process.env.AUDD_API_KEY?.trim();
   const youtubeKey = process.env.YOUTUBE_API_KEY?.trim();
 
