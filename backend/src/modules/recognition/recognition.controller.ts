@@ -52,7 +52,11 @@ export async function recognizeImageController(req: Request, res: Response): Pro
       return;
     }
 
-    const metadata = await recognizeSongFromImage(req.file.buffer);
+    const language = typeof req.body?.language === "string" ? req.body.language : undefined;
+    // maxSongs is accepted for backwards compatibility but not used by the Claude Vision primary path.
+    void req.body?.maxSongs;
+
+    const metadata = await recognizeSongFromImage(req.file.buffer, language);
     await addHistoryEntry({
       songName: metadata.songName,
       artist: metadata.artist,

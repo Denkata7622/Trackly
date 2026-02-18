@@ -1,5 +1,5 @@
-import { parseBuffer } from "music-metadata";
 import Tesseract from "tesseract.js";
+import { HF_API_TOKEN } from "../../config/env";
 import { parseOcrCandidateText, type OcrCandidateMetadata } from "./ocr-parser";
 import {
   lookupSongByTitleAndArtist,
@@ -13,6 +13,13 @@ export type SongMetadata = ProviderSongMetadata & {
   verificationStatus: "verified" | "not_found";
 };
 
+type VisionExtraction = {
+  songName: string;
+  artist: string;
+  album: string;
+  confidence: number;
+};
+
 const UNKNOWN_METADATA: OcrCandidateMetadata = {
   songName: "Unknown Song",
   artist: "Unknown Artist",
@@ -22,23 +29,8 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
-function enrichSong(song: SongMetadata, confidence: number): SongMatch {
-  const seed = buildSeed(song);
-  const genre = GENRES[seed % GENRES.length];
-  const releaseYear = 1998 + (seed % 27);
-  const durationSec = 140 + (seed % 140);
-  const artistSlug = slugify(song.artist);
-  const songSlug = slugify(song.songName);
-
-  return {
-    ...metadata,
-    genre: "Unknown Genre",
-    platformLinks: {},
-    releaseYear: null,
-    source: "ocr_fallback",
-    verificationStatus: "not_found",
-  };
-}
+const HF_VISION_PROMPT =
+  'Extract the song title and artist from this music player screenshot. Respond with ONLY valid JSON: {"songName":"title","artist":"artist","album":"album","confidence":0.95}';
 
 function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   return {
@@ -48,57 +40,134 @@ function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   };
 }
 
-function cleanValue(value?: string): string {
-  const normalized = value?.trim();
-  return normalized && normalized.length > 0 ? normalized : "";
-}
-
-function parseFromFilename(filename: string): SongMetadata {
-  const cleaned = filename.replace(/\.[^/.]+$/, "").replace(/[_]+/g, " ").trim();
-  const separators = [" - ", " – ", " — "];
-
-  for (const separator of separators) {
-    if (cleaned.includes(separator)) {
-      const [artist, title] = cleaned.split(separator).map((part) => part.trim());
-      if (title && artist) {
-        return {
-          ...UNKNOWN_METADATA,
-          songName: title,
-          artist,
-        };
-      }
-    }
-  }
-
+function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
   return {
-    ...UNKNOWN_METADATA,
-    songName: cleaned || UNKNOWN_METADATA.songName,
+    songName: metadata.songName,
+    artist: metadata.artist,
+    album: metadata.album,
+    genre: "Unknown Genre",
+    platformLinks: {},
+    youtubeVideoId: undefined,
+    releaseYear: null,
+    source: "ocr_fallback",
+    verificationStatus: "not_found",
   };
 }
 
-async function preprocessImage(buffer: Buffer): Promise<Buffer> {
-  return buffer;
-}
+function parseVisionJsonResponse(text: string): VisionExtraction {
+  const withoutFences = text
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
 
-async function recognizeFromLocalTags(buffer: Buffer, originalName: string): Promise<SongMetadata> {
+  const jsonCandidate = withoutFences.startsWith("{")
+    ? withoutFences
+    : (withoutFences.match(/\{[\s\S]*\}/)?.[0] ?? "");
+
+  let parsed: Partial<VisionExtraction>;
   try {
-    const metadata = await parseBuffer(buffer);
-    const songName = metadata.common.title?.trim();
-    const artist = metadata.common.artist?.trim();
-    const album = metadata.common.album?.trim();
-
-    if (songName || artist || album) {
-      return toFallbackResponse({
-        songName: songName || UNKNOWN_METADATA.songName,
-        artist: artist || UNKNOWN_METADATA.artist,
-        album: album || UNKNOWN_METADATA.album,
-      });
-    }
+    parsed = JSON.parse(jsonCandidate) as Partial<VisionExtraction>;
   } catch {
-    // fall through to filename parser
+    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
   }
 
-  throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
+  return {
+    songName: typeof parsed.songName === "string" ? parsed.songName.trim() : "",
+    artist: typeof parsed.artist === "string" ? parsed.artist.trim() : "",
+    album: typeof parsed.album === "string" ? parsed.album.trim() : "",
+    confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
+  };
+}
+
+async function callHFWithRetry(url: string, options: RequestInit): Promise<Response> {
+  const response = await fetch(url, options);
+
+  if (response.status === 503) {
+    const errorPayload = (await response.json().catch(() => ({}))) as { error?: string };
+    if (errorPayload.error?.toLowerCase().includes("loading")) {
+      console.log("[recognition] Vision model is loading, retrying in 5 seconds...");
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      return fetch(url, options);
+    }
+  }
+
+  return response;
+}
+
+async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
+  const hfApiToken = process.env.HF_API_TOKEN?.trim() || HF_API_TOKEN.trim();
+  if (!hfApiToken) {
+    throw new Error("HF_API_TOKEN is not configured.");
+  }
+
+  const endpoint =
+    "https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-11B-Vision-Instruct";
+  const imageBase64 = buffer.toString("base64");
+
+  const response = await callHFWithRetry(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${hfApiToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      inputs: {
+        image: `data:image/jpeg;base64,${imageBase64}`,
+        prompt: HF_VISION_PROMPT,
+      },
+      parameters: {
+        max_new_tokens: 200,
+        temperature: 0.1,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Hugging Face API failed with status ${response.status}`);
+  }
+
+  const payload = (await response.json()) as Array<{ generated_text?: string }> | { generated_text?: string };
+  const generatedText = Array.isArray(payload) ? payload[0]?.generated_text : payload.generated_text;
+
+  if (!generatedText || typeof generatedText !== "string") {
+    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
+  }
+
+  const extracted = parseVisionJsonResponse(generatedText);
+
+  if (!extracted.songName || !extracted.artist) {
+    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
+  }
+
+  return {
+    songName: extracted.songName,
+    artist: extracted.artist,
+    album: extracted.album || UNKNOWN_METADATA.album,
+  };
+}
+
+async function extractMetadataWithOcrFallback(buffer: Buffer, language = "eng"): Promise<OcrCandidateMetadata> {
+  const worker = await Tesseract.createWorker(language);
+
+  await worker.setParameters({
+    tessedit_char_whitelist: OCR_CHAR_WHITELIST,
+    preserve_interword_spaces: "1",
+  });
+
+  try {
+    const ocrResult = await worker.recognize(buffer);
+    const candidate = parseOcrCandidateText(ocrResult.data.text, UNKNOWN_METADATA.album);
+
+    if (!candidate) {
+      throw new NoVerifiedResultError("Could not parse a valid Song - Artist pair from the uploaded image.");
+    }
+
+    return candidate;
+  } finally {
+    await worker.terminate();
+  }
 }
 
 export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
@@ -111,33 +180,24 @@ export async function recognizeSongFromAudio(buffer: Buffer, originalName: strin
   throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
 }
 
-export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): Promise<SongMetadata> {
-  const preprocessedImage = await preprocessImage(buffer);
-  const worker = await Tesseract.createWorker(language);
-
-  await worker.setParameters({
-    tessedit_char_whitelist: OCR_CHAR_WHITELIST,
-    preserve_interword_spaces: "1",
-  });
+export async function recognizeSongFromImage(buffer: Buffer, fallbackLanguage = "eng"): Promise<SongMetadata> {
+  let candidate: OcrCandidateMetadata;
 
   try {
-    const ocrResult = await worker.recognize(preprocessedImage);
-    const candidate = parseOcrCandidateText(ocrResult.data.text, UNKNOWN_METADATA.album);
-
-    if (!candidate) {
-      throw new NoVerifiedResultError("Could not parse a valid Song - Artist pair from the uploaded image.");
+    candidate = await extractMetadataWithHuggingFaceVision(buffer);
+  } catch (error) {
+    if (error instanceof NoVerifiedResultError) {
+      throw error;
     }
 
-    const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
-
-    if (!providerResult) {
-      throw new NoVerifiedResultError("No verified YouTube result found for the OCR track candidate.");
-    }
-
-    return toProviderResponse(providerResult);
-  } finally {
-    await worker.terminate();
+    console.warn(`[recognition] Hugging Face Vision failed; falling back to Tesseract OCR: ${(error as Error).message}`);
+    candidate = await extractMetadataWithOcrFallback(buffer, fallbackLanguage);
   }
-}
 
-export { recognizeFromLocalTags };
+  const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
+  if (providerResult) {
+    return toProviderResponse(providerResult);
+  }
+
+  return toFallbackResponse(candidate);
+}

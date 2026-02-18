@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import BottomPlayBar from "./BottomPlayBar_tmp";
-import { PlayerProvider } from "./PlayerProvider_tmp";
+import BottomPlayBar from "./BottomPlayBar";
+import { PlayerProvider } from "./PlayerProvider";
 
 const NAV_ITEMS = [
   { href: "/", label: "🎧 App" },
@@ -15,14 +15,6 @@ const NAV_ITEMS = [
   { href: "/the-future", label: "💡 The Future" },
 ];
 
-const NAV_ITEMS = [
-  { href: "/", label: "🎧 App" },
-  { href: "/idea", label: "💡 Idea" },
-  { href: "/how-to-use", label: "📘 How to use" },
-  { href: "/founders", label: "👥 Founders" },
-  { href: "/concept", label: "🧠 Concept" },
-  { href: "/the-future", label: "💡 The Future" },
-];
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();

@@ -171,7 +171,7 @@ export async function recognizeAudioWithAudd(buffer: Buffer, filename: string): 
   }
 
   const formData = new FormData();
-  const blob = new Blob([buffer], { type: "audio/webm" });
+  const blob = new Blob([new Uint8Array(buffer)], { type: "audio/webm" });
   formData.append("file", blob, filename || "recording.webm");
   formData.append("api_token", apiToken);
   formData.append("return", "spotify,apple_music");
