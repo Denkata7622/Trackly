@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-export const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? "";
+export const HF_API_TOKEN = process.env.HF_API_TOKEN ?? "";
 
 function parseEnvFile(content: string): Record<string, string> {
   const parsed: Record<string, string> = {};

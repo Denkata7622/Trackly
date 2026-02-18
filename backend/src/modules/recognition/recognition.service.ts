@@ -1,5 +1,5 @@
 import Tesseract from "tesseract.js";
-import { GEMINI_API_KEY } from "../../config/env";
+import { HF_API_TOKEN } from "../../config/env";
 import { parseOcrCandidateText, type OcrCandidateMetadata } from "./ocr-parser";
 import {
   lookupSongByTitleAndArtist,
@@ -20,16 +20,6 @@ type VisionExtraction = {
   confidence: number;
 };
 
-type GeminiResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-      }>;
-    };
-  }>;
-};
-
 const UNKNOWN_METADATA: OcrCandidateMetadata = {
   songName: "Unknown Song",
   artist: "Unknown Artist",
@@ -39,16 +29,8 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
-
-const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash-latest"];
-
-const VISION_SYSTEM_PROMPT = `You are extracting music metadata from images. The user sent a
-screenshot or photo showing a song. Extract the song title and
-artist name. Respond with ONLY valid JSON in this format:
-{"songName":"exact title","artist":"exact artist","album":"album or empty","confidence":0.95}
-If you cannot identify a song, return:
-{"songName":"","artist":"","album":"","confidence":0}
-No markdown, no explanation, only the JSON object.`;
+const HF_VISION_PROMPT =
+  'Extract the song title and artist from this music player screenshot. Respond with ONLY valid JSON: {"songName":"title","artist":"artist","album":"album","confidence":0.95}';
 
 function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   return {
@@ -99,65 +81,61 @@ function parseVisionJsonResponse(text: string): VisionExtraction {
   };
 }
 
-async function extractMetadataWithGeminiVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
-  const geminiApiKey = process.env.GEMINI_API_KEY?.trim() || GEMINI_API_KEY.trim();
-  if (!geminiApiKey) {
-    throw new Error("GEMINI_API_KEY is not configured.");
+async function callHFWithRetry(url: string, options: RequestInit): Promise<Response> {
+  const response = await fetch(url, options);
+
+  if (response.status === 503) {
+    const errorPayload = (await response.json().catch(() => ({}))) as { error?: string };
+    if (errorPayload.error?.toLowerCase().includes("loading")) {
+      console.log("[recognition] Vision model is loading, retrying in 5 seconds...");
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      return fetch(url, options);
+    }
   }
 
+  return response;
+}
+
+async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
+  const hfApiToken = process.env.HF_API_TOKEN?.trim() || HF_API_TOKEN.trim();
+  if (!hfApiToken) {
+    throw new Error("HF_API_TOKEN is not configured.");
+  }
+
+  const endpoint =
+    "https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-11B-Vision-Instruct";
   const imageBase64 = buffer.toString("base64");
 
-  let payload: GeminiResponse | null = null;
-  let lastStatus = 0;
-
-  for (const model of GEMINI_MODELS) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": geminiApiKey,
+  const response = await callHFWithRetry(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${hfApiToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      inputs: {
+        image: `data:image/jpeg;base64,${imageBase64}`,
+        prompt: HF_VISION_PROMPT,
       },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: VISION_SYSTEM_PROMPT },
-              {
-                inline_data: {
-                  mime_type: "image/jpeg",
-                  data: imageBase64,
-                },
-              },
-            ],
-          },
-        ],
-      }),
-    });
+      parameters: {
+        max_new_tokens: 200,
+        temperature: 0.1,
+      },
+    }),
+  });
 
-    if (response.ok) {
-      payload = (await response.json()) as GeminiResponse;
-      break;
-    }
-
-    lastStatus = response.status;
-
-    if (response.status !== 404) {
-      throw new Error(`Gemini API failed with status ${response.status}`);
-    }
+  if (!response.ok) {
+    throw new Error(`Hugging Face API failed with status ${response.status}`);
   }
 
-  if (!payload) {
-    throw new Error(`Gemini API failed with status ${lastStatus || 404}`);
-  }
+  const payload = (await response.json()) as Array<{ generated_text?: string }> | { generated_text?: string };
+  const generatedText = Array.isArray(payload) ? payload[0]?.generated_text : payload.generated_text;
 
-  const textContent = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!payload.candidates || payload.candidates.length === 0 || !textContent) {
+  if (!generatedText || typeof generatedText !== "string") {
     throw new NoVerifiedResultError("Could not identify song metadata from the image.");
   }
 
-  const extracted = parseVisionJsonResponse(textContent);
+  const extracted = parseVisionJsonResponse(generatedText);
 
   if (!extracted.songName || !extracted.artist) {
     throw new NoVerifiedResultError("Could not identify song metadata from the image.");
@@ -206,13 +184,13 @@ export async function recognizeSongFromImage(buffer: Buffer, fallbackLanguage = 
   let candidate: OcrCandidateMetadata;
 
   try {
-    candidate = await extractMetadataWithGeminiVision(buffer);
+    candidate = await extractMetadataWithHuggingFaceVision(buffer);
   } catch (error) {
     if (error instanceof NoVerifiedResultError) {
       throw error;
     }
 
-    console.warn(`[recognition] Gemini Vision failed; falling back to Tesseract OCR: ${(error as Error).message}`);
+    console.warn(`[recognition] Hugging Face Vision failed; falling back to Tesseract OCR: ${(error as Error).message}`);
     candidate = await extractMetadataWithOcrFallback(buffer, fallbackLanguage);
   }
 

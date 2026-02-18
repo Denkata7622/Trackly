@@ -28,6 +28,7 @@ export default function Page() {
   const [recognitionPhase, setRecognitionPhase] = useState<"idle" | "recording" | "recognizing" | "verifying">("idle");
   const [historyTracks, setHistoryTracks] = useState<Track[]>([]);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { addToQueue } = usePlayer();
 
@@ -46,6 +47,8 @@ export default function Page() {
   }, [historyTracks, result]);
 
   useEffect(() => {
+    setMounted(true);
+
     const API_BASE_URL =
       process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:4000";
 
@@ -197,11 +200,11 @@ export default function Page() {
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-white/10 bg-black/20 p-3">
               <p className="text-xs text-white/60">Songs in list</p>
-              <p className="mt-1 text-lg font-semibold">{tracks.length}</p>
+              <p className="mt-1 text-lg font-semibold">{mounted ? tracks.length : 0}</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-3">
               <p className="text-xs text-white/60">Favorites</p>
-              <p className="mt-1 text-lg font-semibold">{favoritesSet.size}</p>
+              <p className="mt-1 text-lg font-semibold">{mounted ? favoritesSet.size : 0}</p>
             </div>
             <div className="rounded-xl border border-white/10 bg-black/20 p-3">
               <p className="text-xs text-white/60">Recognition mode</p>
