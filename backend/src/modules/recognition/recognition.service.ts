@@ -29,9 +29,6 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
-const HF_VISION_PROMPT =
-  'Extract the song title and artist from this music player screenshot. Respond with ONLY valid JSON: {"songName":"title","artist":"artist","album":"album","confidence":0.95}';
-
 function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   return {
     ...metadata,
@@ -54,31 +51,40 @@ function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
   };
 }
 
-function parseVisionJsonResponse(text: string): VisionExtraction {
-  const withoutFences = text
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
+function parseVisionTextToMetadata(text: string): VisionExtraction {
+  const cleaned = text.trim().replace(/^"|"$/g, "");
 
-  const jsonCandidate = withoutFences.startsWith("{")
-    ? withoutFences
-    : (withoutFences.match(/\{[\s\S]*\}/)?.[0] ?? "");
-
-  let parsed: Partial<VisionExtraction>;
-  try {
-    parsed = JSON.parse(jsonCandidate) as Partial<VisionExtraction>;
-  } catch {
-    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
+  let match = cleaned.match(/^(.+?)\s+by\s+(.+)$/i);
+  if (match?.[1] && match?.[2]) {
+    return {
+      songName: match[1].trim(),
+      artist: match[2].trim(),
+      album: "",
+      confidence: 0.85,
+    };
   }
 
-  return {
-    songName: typeof parsed.songName === "string" ? parsed.songName.trim() : "",
-    artist: typeof parsed.artist === "string" ? parsed.artist.trim() : "",
-    album: typeof parsed.album === "string" ? parsed.album.trim() : "",
-    confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
-  };
+  match = cleaned.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+  if (match?.[1] && match?.[2]) {
+    return {
+      songName: match[2].trim(),
+      artist: match[1].trim(),
+      album: "",
+      confidence: 0.85,
+    };
+  }
+
+  match = cleaned.match(/^(.+?),\s*(.+)$/);
+  if (match?.[1] && match?.[2]) {
+    return {
+      songName: match[1].trim(),
+      artist: match[2].trim(),
+      album: "",
+      confidence: 0.75,
+    };
+  }
+
+  throw new NoVerifiedResultError("Could not parse song metadata from vision output.");
 }
 
 async function callHFWithRetry(url: string, options: RequestInit): Promise<Response> {
@@ -102,8 +108,7 @@ async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<Ocr
     throw new Error("HF_API_TOKEN is not configured.");
   }
 
-  const endpoint =
-    "https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-11B-Vision-Instruct";
+  const endpoint = "https://api-inference.huggingface.co/models/Salesforce/blip2-opt-2.7b";
   const imageBase64 = buffer.toString("base64");
 
   const response = await callHFWithRetry(endpoint, {
@@ -113,13 +118,10 @@ async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<Ocr
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      inputs: {
-        image: `data:image/jpeg;base64,${imageBase64}`,
-        prompt: HF_VISION_PROMPT,
-      },
+      inputs: imageBase64,
       parameters: {
-        max_new_tokens: 200,
-        temperature: 0.1,
+        question: "What is the song title and artist name shown in this music player?",
+        max_length: 100,
       },
     }),
   });
@@ -128,18 +130,17 @@ async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<Ocr
     throw new Error(`Hugging Face API failed with status ${response.status}`);
   }
 
-  const payload = (await response.json()) as Array<{ generated_text?: string }> | { generated_text?: string };
-  const generatedText = Array.isArray(payload) ? payload[0]?.generated_text : payload.generated_text;
-
-  if (!generatedText || typeof generatedText !== "string") {
-    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
-  }
-
-  const extracted = parseVisionJsonResponse(generatedText);
+  const responseText = await response.text();
+  const extracted = parseVisionTextToMetadata(responseText);
 
   if (!extracted.songName || !extracted.artist) {
     throw new NoVerifiedResultError("Could not identify song metadata from the image.");
   }
+
+  console.log("[recognition] Hugging Face Vision extracted:", {
+    songName: extracted.songName,
+    artist: extracted.artist,
+  });
 
   return {
     songName: extracted.songName,
