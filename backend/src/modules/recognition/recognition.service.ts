@@ -1,5 +1,7 @@
+// Gemini 1.5 Flash is chosen as the primary vision provider here because it is reliable in production,
+// fast for image understanding, and already available in this environment via GEMINI_API_KEY.
 import Tesseract from "tesseract.js";
-import { HF_API_TOKEN } from "../../config/env";
+import { GEMINI_API_KEY } from "../../config/env";
 import { parseOcrCandidateText, type OcrCandidateMetadata } from "./ocr-parser";
 import {
   lookupSongByTitleAndArtist,
@@ -14,10 +16,19 @@ export type SongMetadata = ProviderSongMetadata & {
 };
 
 type VisionExtraction = {
-  songName: string;
-  artist: string;
-  album: string;
-  confidence: number;
+  artist?: string;
+  album?: string;
+  title?: string;
+};
+
+type GeminiResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
 };
 
 const UNKNOWN_METADATA: OcrCandidateMetadata = {
@@ -28,6 +39,9 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
+
+const GEMINI_VISION_PROMPT =
+  'Identify the album art or music screenshot and extract metadata. Respond ONLY with valid JSON in exactly this shape: {"artist":"...","album":"...","title":"..."}. Use empty strings if unknown. No markdown, no explanation.';
 
 function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   return {
@@ -51,99 +65,93 @@ function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
   };
 }
 
-function parseVisionTextToMetadata(text: string): VisionExtraction {
-  const cleaned = text.trim().replace(/^"|"$/g, "");
+function parseVisionJsonResponse(text: string): VisionExtraction {
+  const withoutFences = text
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
 
-  let match = cleaned.match(/^(.+?)\s+by\s+(.+)$/i);
-  if (match?.[1] && match?.[2]) {
-    return {
-      songName: match[1].trim(),
-      artist: match[2].trim(),
-      album: "",
-      confidence: 0.85,
-    };
+  const jsonCandidate = withoutFences.startsWith("{")
+    ? withoutFences
+    : (withoutFences.match(/\{[\s\S]*\}/)?.[0] ?? "");
+
+  if (!jsonCandidate) {
+    throw new NoVerifiedResultError("Could not parse song metadata from vision output.");
   }
 
-  match = cleaned.match(/^(.+?)\s*[-–—]\s*(.+)$/);
-  if (match?.[1] && match?.[2]) {
+  try {
+    const parsed = JSON.parse(jsonCandidate) as Partial<VisionExtraction>;
     return {
-      songName: match[2].trim(),
-      artist: match[1].trim(),
-      album: "",
-      confidence: 0.85,
+      artist: typeof parsed.artist === "string" ? parsed.artist.trim() : "",
+      album: typeof parsed.album === "string" ? parsed.album.trim() : "",
+      title: typeof parsed.title === "string" ? parsed.title.trim() : "",
     };
+  } catch {
+    throw new NoVerifiedResultError("Could not parse song metadata from vision output.");
   }
-
-  match = cleaned.match(/^(.+?),\s*(.+)$/);
-  if (match?.[1] && match?.[2]) {
-    return {
-      songName: match[1].trim(),
-      artist: match[2].trim(),
-      album: "",
-      confidence: 0.75,
-    };
-  }
-
-  throw new NoVerifiedResultError("Could not parse song metadata from vision output.");
 }
 
-async function callHFWithRetry(url: string, options: RequestInit): Promise<Response> {
-  const response = await fetch(url, options);
-
-  if (response.status === 503) {
-    const errorPayload = (await response.json().catch(() => ({}))) as { error?: string };
-    if (errorPayload.error?.toLowerCase().includes("loading")) {
-      console.log("[recognition] Vision model is loading, retrying in 5 seconds...");
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      return fetch(url, options);
-    }
+async function extractMetadataWithGeminiVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
+  const geminiApiKey = process.env.GEMINI_API_KEY?.trim() || GEMINI_API_KEY.trim();
+  if (!geminiApiKey) {
+    throw new Error("GEMINI_API_KEY is not configured.");
   }
 
-  return response;
-}
-
-async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
-  const hfApiToken = process.env.HF_API_TOKEN?.trim() || HF_API_TOKEN.trim();
-  if (!hfApiToken) {
-    throw new Error("HF_API_TOKEN is not configured.");
-  }
-
-  const endpoint = "https://api-inference.huggingface.co/models/Salesforce/blip2-opt-2.7b";
+  const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
   const imageBase64 = buffer.toString("base64");
 
-  const response = await callHFWithRetry(endpoint, {
+  const response = await fetch(`${endpoint}?key=${encodeURIComponent(geminiApiKey)}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${hfApiToken}`,
-      "Content-Type": "application/json",
+      "content-type": "application/json",
     },
     body: JSON.stringify({
-      inputs: imageBase64,
-      parameters: {
-        question: "What is the song title and artist name shown in this music player?",
-        max_length: 100,
+      contents: [
+        {
+          parts: [
+            { text: GEMINI_VISION_PROMPT },
+            {
+              inline_data: {
+                mime_type: "image/jpeg",
+                data: imageBase64,
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
       },
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Hugging Face API failed with status ${response.status}`);
+    throw new Error(`Gemini Vision API failed with status ${response.status}`);
   }
 
-  const responseText = await response.text();
-  const extracted = parseVisionTextToMetadata(responseText);
+  const payload = (await response.json()) as GeminiResponse;
+  const responseText = payload.candidates?.[0]?.content?.parts?.[0]?.text;
 
-  if (!extracted.songName || !extracted.artist) {
+  if (!responseText) {
+    throw new NoVerifiedResultError("Could not parse song metadata from vision output.");
+  }
+
+  const extracted = parseVisionJsonResponse(responseText);
+
+  if (!extracted.title || !extracted.artist) {
     throw new NoVerifiedResultError("Could not identify song metadata from the image.");
   }
 
-  console.log("[recognition] Hugging Face Vision extracted:", {
-    songName: extracted.songName,
+  console.log("[recognition] Gemini Vision extracted:", {
+    title: extracted.title,
     artist: extracted.artist,
+    album: extracted.album || "",
   });
 
   return {
-    songName: extracted.songName,
+    songName: extracted.title,
     artist: extracted.artist,
     album: extracted.album || UNKNOWN_METADATA.album,
   };
@@ -185,13 +193,13 @@ export async function recognizeSongFromImage(buffer: Buffer, fallbackLanguage = 
   let candidate: OcrCandidateMetadata;
 
   try {
-    candidate = await extractMetadataWithHuggingFaceVision(buffer);
+    candidate = await extractMetadataWithGeminiVision(buffer);
   } catch (error) {
     if (error instanceof NoVerifiedResultError) {
       throw error;
     }
 
-    console.warn(`[recognition] Hugging Face Vision failed; falling back to Tesseract OCR: ${(error as Error).message}`);
+    console.warn(`[recognition] Gemini Vision failed; falling back to Tesseract OCR: ${(error as Error).message}`);
     candidate = await extractMetadataWithOcrFallback(buffer, fallbackLanguage);
   }
 
