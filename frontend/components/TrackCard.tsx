@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useState } from "react";
-import type { Playlist } from "../features/library/types_tmp";
+import type { Playlist } from "../features/library/types";
 import type { Track } from "../features/tracks/types";
 
 type TrackCardProps = {
@@ -11,7 +11,8 @@ type TrackCardProps = {
   onAddToPlaylist: (trackId: string, playlistId: string) => void;
   onCreatePlaylist: (playlistName: string) => void;
   onDeletePlaylist: (playlistId: string) => void;
-  onPlayTrack: (track: Track) => void;
+  onPlayTrack?: (track: Track) => void;
+  onPlay?: (track: Track) => void;
 };
 
 export default function TrackCard({
@@ -23,6 +24,7 @@ export default function TrackCard({
   onCreatePlaylist,
   onDeletePlaylist,
   onPlayTrack,
+  onPlay,
 }: TrackCardProps) {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>("");
   const [newPlaylistName, setNewPlaylistName] = useState("");
@@ -38,10 +40,7 @@ export default function TrackCard({
         <div className="h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-white/10">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={track.artworkUrl} alt={`${track.title} cover`} className="h-full w-full object-cover" />
-          <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-white text-lg">
-            ▶
-          </span>
-        </button>
+        </div>
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-white">{track.title}</div>
@@ -50,7 +49,7 @@ export default function TrackCard({
 
         <button
           type="button"
-          onClick={() => onPlayTrack(track)}
+          onClick={() => (onPlayTrack ?? onPlay)?.(track)}
           className="rounded-lg border border-cyan-300/40 bg-cyan-500/10 px-2.5 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-500/20"
         >
           ▶ Play
