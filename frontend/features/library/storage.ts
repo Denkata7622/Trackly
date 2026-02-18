@@ -1,4 +1,4 @@
-import type { LibraryState, Playlist } from "./types_tmp";
+import type { LibraryState, Playlist } from "./types";
 
 const FAVORITES_KEY = "trackly.library.favorites";
 const PLAYLISTS_KEY = "trackly.library.playlists";

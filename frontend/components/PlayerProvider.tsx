@@ -192,8 +192,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (!playerRef.current) return;
-      setCurrentTime(playerRef.current.getCurrentTime() || 0);
-      setDuration(playerRef.current.getDuration() || 0);
+      if (playerRef.current?.getCurrentTime) {
+        setCurrentTime(playerRef.current.getCurrentTime() || 0);
+      }
+      if (playerRef.current?.getDuration) {
+        setDuration(playerRef.current.getDuration() || 0);
+      }
     }, 500);
 
     return () => window.clearInterval(interval);

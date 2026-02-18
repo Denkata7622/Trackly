@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import LibrarySidebar from "./LibrarySidebar_tmp";
+import LibrarySidebar from "./LibrarySidebar";
 import TrackCard from "./TrackCard";
-import { usePlayer } from "./PlayerProvider_tmp";
-import { useLibrary } from "../features/library/useLibrary_tmp";
+import { usePlayer } from "./PlayerProvider";
+import { useLibrary } from "../features/library/useLibrary";
 import {
   recognizeFromAudio,
   recognizeFromImage,
@@ -41,15 +41,7 @@ const THEME_KEY = "trackly-theme";
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function songMatchToRecognitionResult(match: SongMatch, source: "audio" | "image"): SongRecognitionResult {
-  return {
-    songName: match.songName,
-    artist: match.artist,
-    album: match.album,
-    genre: match.genre,
-    releaseYear: match.releaseYear,
-    platformLinks: match.platformLinks,
-    source,
-  };
+  return { ...match, source };
 }
 
 function toRecognizedTrack(result: SongRecognitionResult): Track {
