@@ -1,8 +1,5 @@
-// Gemini 1.5 Flash is chosen as the primary vision provider here because it is reliable in production,
-// fast for image understanding, and already available in this environment via GEMINI_API_KEY.
 import Tesseract from "tesseract.js";
-import { GEMINI_API_KEY } from "../../config/env";
-import { parseOcrCandidateText, type OcrCandidateMetadata } from "./ocr-parser";
+import { interpretOcr, type OcrBlock } from "./ocrInterpreter";
 import {
   lookupSongByTitleAndArtist,
   NoVerifiedResultError,
@@ -15,33 +12,33 @@ export type SongMetadata = ProviderSongMetadata & {
   verificationStatus: "verified" | "not_found";
 };
 
-type VisionExtraction = {
-  artist?: string;
-  album?: string;
-  title?: string;
+type OcrCandidateMetadata = {
+  songName: string;
+  artist: string;
+  album: string;
+  confidenceScore: number;
 };
 
-type GeminiResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-      }>;
-    };
-  }>;
+type TesseractWord = {
+  text?: string;
+  confidence?: number;
+  bbox?: {
+    x0?: number;
+    y0?: number;
+    x1?: number;
+    y1?: number;
+  };
 };
 
 const UNKNOWN_METADATA: OcrCandidateMetadata = {
   songName: "Unknown Song",
   artist: "Unknown Artist",
   album: "Unknown Album",
+  confidenceScore: 0,
 };
 
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
-
-const GEMINI_VISION_PROMPT =
-  'Identify the album art or music screenshot and extract metadata. Respond ONLY with valid JSON in exactly this shape: {"artist":"...","album":"...","title":"..."}. Use empty strings if unknown. No markdown, no explanation.';
 
 function toProviderResponse(metadata: ProviderSongMetadata): SongMetadata {
   return {
@@ -65,99 +62,37 @@ function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
   };
 }
 
-function parseVisionJsonResponse(text: string): VisionExtraction {
-  const withoutFences = text
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
+function toOcrBlocks(words: TesseractWord[]): OcrBlock[] {
+  const blocks: OcrBlock[] = [];
 
-  const jsonCandidate = withoutFences.startsWith("{")
-    ? withoutFences
-    : (withoutFences.match(/\{[\s\S]*\}/)?.[0] ?? "");
+  for (const word of words) {
+    const text = typeof word.text === "string" ? word.text : "";
+    const bbox = word.bbox;
+    if (!bbox) {
+      continue;
+    }
 
-  if (!jsonCandidate) {
-    throw new NoVerifiedResultError("Could not parse song metadata from vision output.");
-  }
+    const x0 = bbox.x0 ?? 0;
+    const y0 = bbox.y0 ?? 0;
+    const x1 = bbox.x1 ?? x0;
+    const y1 = bbox.y1 ?? y0;
 
-  try {
-    const parsed = JSON.parse(jsonCandidate) as Partial<VisionExtraction>;
-    return {
-      artist: typeof parsed.artist === "string" ? parsed.artist.trim() : "",
-      album: typeof parsed.album === "string" ? parsed.album.trim() : "",
-      title: typeof parsed.title === "string" ? parsed.title.trim() : "",
-    };
-  } catch {
-    throw new NoVerifiedResultError("Could not parse song metadata from vision output.");
-  }
-}
-
-async function extractMetadataWithGeminiVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
-  const geminiApiKey = process.env.GEMINI_API_KEY?.trim() || GEMINI_API_KEY.trim();
-  if (!geminiApiKey) {
-    throw new Error("GEMINI_API_KEY is not configured.");
-  }
-
-  const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
-  const imageBase64 = buffer.toString("base64");
-
-  const response = await fetch(`${endpoint}?key=${encodeURIComponent(geminiApiKey)}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: GEMINI_VISION_PROMPT },
-            {
-              inline_data: {
-                mime_type: "image/jpeg",
-                data: imageBase64,
-              },
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.1,
+    blocks.push({
+      text,
+      confidence: typeof word.confidence === "number" ? word.confidence : 0,
+      bbox: {
+        x: x0,
+        y: y0,
+        width: Math.max(1, x1 - x0),
+        height: Math.max(1, y1 - y0),
       },
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Gemini Vision API failed with status ${response.status}`);
+    });
   }
 
-  const payload = (await response.json()) as GeminiResponse;
-  const responseText = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!responseText) {
-    throw new NoVerifiedResultError("Could not parse song metadata from vision output.");
-  }
-
-  const extracted = parseVisionJsonResponse(responseText);
-
-  if (!extracted.title || !extracted.artist) {
-    throw new NoVerifiedResultError("Could not identify song metadata from the image.");
-  }
-
-  console.log("[recognition] Gemini Vision extracted:", {
-    title: extracted.title,
-    artist: extracted.artist,
-    album: extracted.album || "",
-  });
-
-  return {
-    songName: extracted.title,
-    artist: extracted.artist,
-    album: extracted.album || UNKNOWN_METADATA.album,
-  };
+  return blocks;
 }
 
-async function extractMetadataWithOcrFallback(buffer: Buffer, language = "eng"): Promise<OcrCandidateMetadata> {
+async function extractMetadataWithOcr(buffer: Buffer, language = "eng"): Promise<OcrCandidateMetadata> {
   const worker = await Tesseract.createWorker(language);
 
   await worker.setParameters({
@@ -167,13 +102,19 @@ async function extractMetadataWithOcrFallback(buffer: Buffer, language = "eng"):
 
   try {
     const ocrResult = await worker.recognize(buffer);
-    const candidate = parseOcrCandidateText(ocrResult.data.text, UNKNOWN_METADATA.album);
+    const words = ((ocrResult.data as { words?: TesseractWord[] }).words ?? []) as TesseractWord[];
+    const interpreted = interpretOcr(toOcrBlocks(words));
 
-    if (!candidate) {
-      throw new NoVerifiedResultError("Could not parse a valid Song - Artist pair from the uploaded image.");
+    if (!interpreted.music?.title || !interpreted.music.artist) {
+      throw new NoVerifiedResultError("Could not parse a valid title and artist pair from the uploaded image.");
     }
 
-    return candidate;
+    return {
+      songName: interpreted.music.title,
+      artist: interpreted.music.artist,
+      album: UNKNOWN_METADATA.album,
+      confidenceScore: interpreted.music.confidenceScore,
+    };
   } finally {
     await worker.terminate();
   }
@@ -190,18 +131,7 @@ export async function recognizeSongFromAudio(buffer: Buffer, originalName: strin
 }
 
 export async function recognizeSongFromImage(buffer: Buffer, fallbackLanguage = "eng"): Promise<SongMetadata> {
-  let candidate: OcrCandidateMetadata;
-
-  try {
-    candidate = await extractMetadataWithGeminiVision(buffer);
-  } catch (error) {
-    if (error instanceof NoVerifiedResultError) {
-      throw error;
-    }
-
-    console.warn(`[recognition] Gemini Vision failed; falling back to Tesseract OCR: ${(error as Error).message}`);
-    candidate = await extractMetadataWithOcrFallback(buffer, fallbackLanguage);
-  }
+  const candidate = await extractMetadataWithOcr(buffer, fallbackLanguage);
 
   const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
   if (providerResult) {

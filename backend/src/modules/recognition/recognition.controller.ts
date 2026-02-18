@@ -53,7 +53,7 @@ export async function recognizeImageController(req: Request, res: Response): Pro
     }
 
     const language = typeof req.body?.language === "string" ? req.body.language : undefined;
-    // maxSongs is accepted for backwards compatibility but not used by the Claude Vision primary path.
+    // maxSongs is accepted for backwards compatibility but not used by the deterministic OCR pipeline.
     void req.body?.maxSongs;
 
     const metadata = await recognizeSongFromImage(req.file.buffer, language);
