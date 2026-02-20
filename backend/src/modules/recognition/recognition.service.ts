@@ -40,32 +40,30 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
-const VISION_SYSTEM_PROMPT = `You are analyzing a music player screenshot (Spotify, Apple Music, YouTube Music, etc.).
+const VISION_SYSTEM_PROMPT = `You are analyzing a music screenshot (Spotify playlist, Apple Music library, YouTube Music queue, now playing screen, etc.).
 
-Your task: Extract the COMPLETE song title and COMPLETE artist name exactly as displayed.
+Extract ALL songs visible in the image. This could be:
+- A single now-playing song
+- A playlist with multiple songs
+- A queue or album tracklist
+- Search results
+
+For EACH song you see, extract the complete song title and complete artist name.
 
 CRITICAL RULES:
-1. The song title is usually the largest, most prominent text
-2. The artist name is usually directly below or next to the song title
-3. Artist names can be multiple words (e.g., "Mason Jar Moonshine", "The Weeknd", "Post Malone")
-4. Song titles can be multiple words (e.g., "I'm Legendary", "Blinding Lights")
-5. DO NOT extract fragments - capture the ENTIRE text for each field
-6. DO NOT extract UI elements like "Play", "Pause", timestamps, or progress bars
+1. Capture ENTIRE multi-word names (e.g., "Mason Jar Moonshine", not "Jar")
+2. Extract every song visible, not just the first one
+3. DO NOT extract UI elements (Play, Pause, timestamps, durations, track numbers)
+4. DO NOT extract playlist names or album titles as songs
 
-Look for the NOW PLAYING section of the interface and extract from there.
+Respond with ONLY a JSON array, no other text:
+[
+  {"songName":"complete title","artist":"complete artist","album":""},
+  {"songName":"complete title","artist":"complete artist","album":""},
+  ...
+]
 
-Respond with ONLY this JSON format, no other text:
-{"songName":"complete song title here","artist":"complete artist name here","album":"album name or empty string","confidence":0.95}
-
-If you cannot clearly identify both song and artist, respond:
-{"songName":"","artist":"","album":"","confidence":0}`;
-
-type VisionExtractedMetadata = {
-  songName: string;
-  artist: string;
-  album: string;
-  confidence: number;
-};
+If no songs are visible, respond with an empty array: []`;
 
 function scoreLineForTitle(line: InterpretedLine): number {
   return (
@@ -158,30 +156,45 @@ function toOcrBlocks(words: TesseractWord[]): OcrBlock[] {
   return blocks;
 }
 
-function parseVisionResponse(text: string): VisionExtractedMetadata {
-  const trimmed = text.trim();
-  const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new NoVerifiedResultError("Vision extraction did not return JSON metadata.");
-  }
+function parseVisionArrayResponse(text: string): OcrCandidateMetadata[] {
+  const cleaned = text.trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(jsonMatch[0]);
+    parsed = JSON.parse(cleaned);
   } catch {
-    throw new NoVerifiedResultError("Vision extraction returned invalid JSON metadata.");
+    throw new NoVerifiedResultError("Could not parse vision response.");
   }
 
-  const candidate = parsed as Partial<VisionExtractedMetadata>;
-  return {
-    songName: typeof candidate.songName === "string" ? candidate.songName.trim() : "",
-    artist: typeof candidate.artist === "string" ? candidate.artist.trim() : "",
-    album: typeof candidate.album === "string" ? candidate.album.trim() : "",
-    confidence: typeof candidate.confidence === "number" ? candidate.confidence : 0,
-  };
+  if (!Array.isArray(parsed)) {
+    throw new NoVerifiedResultError("Vision did not return an array of songs.");
+  }
+
+  return parsed
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .filter((item) => typeof item["songName"] === "string" && typeof item["artist"] === "string")
+    .map((item) => {
+      const songName = (item["songName"] as string).trim();
+      const artist = (item["artist"] as string).trim();
+      const album = typeof item["album"] === "string"
+        ? (item["album"] as string).trim() || UNKNOWN_METADATA.album
+        : UNKNOWN_METADATA.album;
+
+      return {
+        songName,
+        artist,
+        album,
+        confidenceScore: 0.75,
+      };
+    })
+    .filter((item) => item.songName.length > 0 && item.artist.length > 0);
 }
 
-async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
+async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<OcrCandidateMetadata[]> {
   const apiKey = process.env.HUGGINGFACE_API_KEY;
   if (!apiKey) {
     throw new NoVerifiedResultError("Hugging Face vision is not configured.");
@@ -203,7 +216,7 @@ async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<Ocr
           content: [
             {
               type: "text",
-              text: "Extract the currently playing track metadata from this screenshot.",
+              text: "Extract all visible songs from this screenshot.",
             },
             {
               type: "image_url",
@@ -215,7 +228,7 @@ async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<Ocr
         },
       ],
       temperature: 0,
-      max_tokens: 250,
+      max_tokens: 700,
     }),
   });
 
@@ -231,32 +244,10 @@ async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<Ocr
     throw new NoVerifiedResultError("Vision extraction returned an empty response.");
   }
 
-  const extracted = parseVisionResponse(content);
-  console.log("[recognition] Vision extracted JSON:", extracted);
+  const extracted = parseVisionArrayResponse(content);
+  console.log("[recognition] Vision extracted JSON array:", extracted);
 
-  // Reject obviously fragmented results
-  if (extracted.songName.length < 3 || extracted.artist.length < 3) {
-    console.warn(`[recognition] Vision returned suspiciously short metadata: "${extracted.songName}" by "${extracted.artist}"`);
-    throw new NoVerifiedResultError("Vision extraction produced incomplete metadata.");
-  }
-
-  // Reject single-word artist names that look like fragments
-  // (allow intentional single names like "Drake", "Adele" but flag "Jar", "Moon")
-  const commonSingleWordArtists = ["drake", "adele", "rihanna", "beyonce", "eminem", "metallica"];
-  const artistLower = extracted.artist.toLowerCase();
-  if (!artistLower.includes(" ") &&
-      extracted.artist.length < 6 &&
-      !commonSingleWordArtists.includes(artistLower)) {
-    console.warn(`[recognition] Vision returned likely fragment artist: "${extracted.artist}"`);
-    throw new NoVerifiedResultError("Vision extraction produced incomplete metadata.");
-  }
-
-  return {
-    songName: extracted.songName,
-    artist: extracted.artist,
-    album: extracted.album || UNKNOWN_METADATA.album,
-    confidenceScore: extracted.confidence,
-  };
+  return extracted;
 }
 
 async function extractMetadataWithOcr(buffer: Buffer, language = "eng"): Promise<OcrCandidateMetadata> {
@@ -302,24 +293,39 @@ export async function recognizeSongFromAudio(buffer: Buffer, originalName: strin
   throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
 }
 
-export async function recognizeSongFromImage(buffer: Buffer, fallbackLanguage = "eng"): Promise<SongMetadata> {
-  let candidate: OcrCandidateMetadata;
+export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): Promise<SongMetadata[]> {
+  let visionResults: OcrCandidateMetadata[];
 
   try {
-    candidate = await extractMetadataWithHuggingFaceVision(buffer);
+    visionResults = await extractMetadataWithHuggingFaceVision(buffer);
   } catch (error) {
     console.warn("[recognition] Vision extraction unavailable or rejected, falling back to OCR.", error);
-    candidate = await extractMetadataWithOcr(buffer, fallbackLanguage);
+    const fallback = await extractMetadataWithOcr(buffer, language);
+    visionResults = [fallback];
   }
 
-  if (!candidate.songName || !candidate.artist || candidate.artist === UNKNOWN_METADATA.artist) {
-    return toFallbackResponse(candidate);
+  if (visionResults.length === 0) {
+    throw new NoVerifiedResultError("No songs detected in image.");
   }
 
-  const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
-  if (providerResult) {
-    return toProviderResponse(providerResult);
+  const songMetadataResults: SongMetadata[] = [];
+
+  for (const candidate of visionResults) {
+    try {
+      const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
+      if (providerResult) {
+        songMetadataResults.push(toProviderResponse(providerResult));
+      } else {
+        songMetadataResults.push(toFallbackResponse(candidate));
+      }
+    } catch {
+      console.warn(`[recognition] Lookup failed for "${candidate.songName}" by "${candidate.artist}"`);
+    }
   }
 
-  return toFallbackResponse(candidate);
+  if (songMetadataResults.length === 0) {
+    throw new NoVerifiedResultError("No songs detected in image.");
+  }
+
+  return songMetadataResults;
 }

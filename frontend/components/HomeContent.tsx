@@ -498,8 +498,9 @@ export function HomeContent() {
             {imageResult && (
               <section className="mt-8 rounded-2xl border border-white/15 p-6">
                 <h2 className="text-xl font-semibold">
-                  OCR Results ({imageResult.count}) • language: {imageResult.language}
+                  Found {imageResult.count} song{imageResult.count !== 1 ? "s" : ""}
                 </h2>
+                <p className="mt-1 text-sm opacity-75">language: {imageResult.language}</p>
                 <div className="mt-4 space-y-3">
                   {imageResult.songs.map((song, index) => (
                     <div
@@ -526,6 +527,11 @@ export function HomeContent() {
                             >
                               ▶ Play
                             </button>
+                            {song.platformLinks.spotify && (
+                              <a className="miniBtn text-xs" href={song.platformLinks.spotify} target="_blank" rel="noreferrer">
+                                Spotify
+                              </a>
+                            )}
                             <button className="secondaryBtn text-xs" onClick={() => saveSong(song)}>
                               Save
                             </button>
