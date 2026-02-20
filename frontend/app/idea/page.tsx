@@ -2,28 +2,62 @@
 
 import { useLanguage } from "../../lib/LanguageContext";
 
-const content = {
-  en: {
-    title: "The idea behind Trackly",
-    subtitle:
-      "A student project focused on one clear mission: recognize songs and guide users to legal listening instantly.",
-  },
-  bg: {
-    title: "Идеята зад Trackly",
-    subtitle:
-      "Ученически проект с ясна мисия: разпознаваш песен и веднага получаваш легален достъп за слушане.",
-  },
-};
-
 export default function IdeaPage() {
   const { language } = useLanguage();
-  const c = content[language];
+  const isBg = language === "bg";
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-16 text-white">
-      <section className="text-center mb-16">
-        <h1 className="mt-6 text-5xl font-semibold tracking-tight leading-tight">{c.title}</h1>
-        <p className="mx-auto mt-5 max-w-3xl text-lg text-white/65 leading-relaxed">{c.subtitle}</p>
+      <section className="mb-16 text-center">
+        <h1 className="mt-6 text-5xl font-semibold tracking-tight leading-tight">
+          {isBg ? "Идеята зад Trackly" : "The idea behind Trackly"}
+        </h1>
+        <p className="mx-auto mt-5 max-w-3xl text-lg text-white/65 leading-relaxed">
+          {isBg
+            ? "Trackly решава проблема след разпознаването: не само каква е песента, а къде да я слушаш бързо, сигурно и легално."
+            : "Trackly solves the problem after recognition: not only what song it is, but where to listen quickly, safely, and legally."}
+        </p>
+      </section>
+
+      <section className="mb-14 grid gap-4 md:grid-cols-3">
+        {[
+          {
+            title: isBg ? "Проблем" : "Problem",
+            heading: isBg ? "Разпознаване без следваща стъпка" : "Recognition without a next step",
+            text: isBg
+              ? "След разпознаване потребителят често търси ръчно в няколко платформи и губи време."
+              : "After recognition, users often search manually across platforms and lose time.",
+          },
+          {
+            title: isBg ? "Решение" : "Solution",
+            heading: isBg ? "Един резултат → легален достъп" : "One result → legal access",
+            text: isBg
+              ? "Trackly предлага директни действия към Spotify, YouTube Music и Apple Music."
+              : "Trackly provides direct actions to Spotify, YouTube Music, and Apple Music.",
+          },
+          {
+            title: isBg ? "Изпълнение" : "Implementation",
+            heading: isBg ? "Модерен интерфейс + API" : "Modern interface + API",
+            text: isBg
+              ? "Frontend и backend работят заедно за разпознаване, метаданни и история."
+              : "Frontend and backend work together for recognition, metadata, and history.",
+          },
+        ].map((item) => (
+          <div key={item.heading} className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
+            <div className="text-xs text-white/55">{item.title}</div>
+            <h3 className="mt-2 text-lg font-semibold">{item.heading}</h3>
+            <p className="mt-3 text-sm leading-relaxed text-white/70">{item.text}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
+        <h2 className="mb-3 text-2xl font-semibold">{isBg ? "Защо това е важно" : "Why this matters"}</h2>
+        <p className="leading-relaxed text-white/75">
+          {isBg
+            ? "Целта е ясна: бърз път от „чувам песен“ до „слушам легално“. Това подкрепя артистите, намалява объркването и прави демонстрацията на продукта реална и убедителна."
+            : "The goal is clear: a fast path from “I hear a song” to “I listen legally.” It supports artists, reduces friction, and makes the product demo practical and convincing."}
+        </p>
       </section>
     </main>
   );

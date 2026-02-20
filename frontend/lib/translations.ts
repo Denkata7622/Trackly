@@ -85,7 +85,17 @@ export const translations = {
     unknown_song: "Unknown song",
     listening: "Listening…",
     stop: "Stop",
-    songs_heading: "Songs"
+    songs_heading: "Songs",
+    language_label: "Language",
+    ocr_lang_english: "English",
+    ocr_lang_spanish: "Spanish",
+    ocr_lang_french: "French",
+    ocr_lang_german: "German",
+    ocr_lang_italian: "Italian",
+    ocr_lang_portuguese: "Portuguese",
+    album_cover: "Album cover",
+    toast_cache_loaded: "Loaded OCR results from cache",
+    error_audio_capture_failed: "Audio capture failed.",
   },
   bg: {
     nav_app: "Приложение",
@@ -173,7 +183,17 @@ export const translations = {
     unknown_song: "Непозната песен",
     listening: "Слушане…",
     stop: "Спри",
-    songs_heading: "Песни"
+    songs_heading: "Песни",
+    language_label: "Език",
+    ocr_lang_english: "Английски",
+    ocr_lang_spanish: "Испански",
+    ocr_lang_french: "Френски",
+    ocr_lang_german: "Немски",
+    ocr_lang_italian: "Италиански",
+    ocr_lang_portuguese: "Португалски",
+    album_cover: "Корица на албум",
+    toast_cache_loaded: "Заредени OCR резултати от кеш",
+    error_audio_capture_failed: "Грешка при запис на аудио.",
   }
 };
 

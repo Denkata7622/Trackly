@@ -167,7 +167,7 @@ export function HomeContent() {
       const chunks: Blob[] = [];
       const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
       mediaRecorder.ondataavailable = (e: BlobEvent) => { if (e.data.size > 0) chunks.push(e.data); };
-      mediaRecorder.onerror = () => reject(new Error("Audio capture failed."));
+      mediaRecorder.onerror = () => reject(new Error(t("error_audio_capture_failed", language)));
       mediaRecorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         resolve(new Blob(chunks, { type: "audio/webm" }));
@@ -239,7 +239,7 @@ export function HomeContent() {
         const cachedResult = imageCache.current.get(cacheKey)!;
         setPendingImageResult(cachedResult);
         setShowReviewModal(true);
-        pushToast("info", t("toast_ocr_complete", language, { count: cachedResult.count }));
+        pushToast("info", t("toast_cache_loaded", language));
         return;
       }
 
@@ -415,12 +415,12 @@ export function HomeContent() {
               onChange={(e) => setOcrLanguage(e.target.value)}
               className="rounded-md border border-white/20 bg-black/20 px-3 py-2"
             >
-              <option value="eng">English</option>
-              <option value="spa">Spanish</option>
-              <option value="fra">French</option>
-              <option value="deu">German</option>
-              <option value="ita">Italian</option>
-              <option value="por">Portuguese</option>
+              <option value="eng">{t("ocr_lang_english", language)}</option>
+              <option value="spa">{t("ocr_lang_spanish", language)}</option>
+              <option value="fra">{t("ocr_lang_french", language)}</option>
+              <option value="deu">{t("ocr_lang_german", language)}</option>
+              <option value="ita">{t("ocr_lang_italian", language)}</option>
+              <option value="por">{t("ocr_lang_portuguese", language)}</option>
             </select>
           </div>
           <div className="rounded-xl border border-white/15 p-4 text-sm opacity-80">
@@ -487,7 +487,7 @@ export function HomeContent() {
                 <div className="flex flex-col gap-4 sm:flex-row">
                   <img
                     src={audioResult.primaryMatch.albumArtUrl}
-                    alt="Album cover"
+                    alt={t("album_cover", language)}
                     className="h-28 w-28 rounded-xl object-cover"
                   />
                   <div>
@@ -538,7 +538,7 @@ export function HomeContent() {
             {imageResult && (
               <section className="mt-8 rounded-2xl border border-white/15 p-6">
                 <h2 className="text-xl font-semibold">{t("confirmed_songs", language)} ({imageResult.count})</h2>
-                <p className="mt-1 text-sm opacity-75">language: {imageResult.language}</p>
+                <p className="mt-1 text-sm opacity-75">{t("language_label", language)}: {imageResult.language}</p>
                 <div className="mt-4 space-y-3">
                   {imageResult.songs.map((song, index) => (
                     <div
@@ -546,7 +546,7 @@ export function HomeContent() {
                       className="rounded-xl border border-white/10 p-4"
                     >
                       <div className="flex items-start gap-3">
-                        <img src={song.albumArtUrl} alt="Album cover" className="h-16 w-16 rounded-lg object-cover" />
+                        <img src={song.albumArtUrl} alt={t("album_cover", language)} className="h-16 w-16 rounded-lg object-cover" />
                         <div className="flex-1">
                           <p className="text-lg font-medium">{index + 1}. {song.songName}</p>
                           <p className="opacity-80">{song.artist}</p>
@@ -563,15 +563,15 @@ export function HomeContent() {
                                 query: `${song.songName} ${song.artist} official audio`,
                               })}
                             >
-                              ▶ Play
+                              ▶ {t("btn_play", language)}
                             </button>
                             {song.platformLinks.spotify && (
                               <a className="miniBtn text-xs" href={song.platformLinks.spotify} target="_blank" rel="noreferrer">
-                                Spotify
+                                {t("btn_spotify", language)}
                               </a>
                             )}
                             <button className="secondaryBtn text-xs" onClick={() => saveSong(song)}>
-                              Save
+                              {t("btn_save", language)}
                             </button>
                           </div>
                         </div>
