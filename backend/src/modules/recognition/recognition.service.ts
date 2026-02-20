@@ -40,6 +40,33 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
 
+const VISION_SYSTEM_PROMPT = `You are analyzing a music player screenshot (Spotify, Apple Music, YouTube Music, etc.).
+
+Your task: Extract the COMPLETE song title and COMPLETE artist name exactly as displayed.
+
+CRITICAL RULES:
+1. The song title is usually the largest, most prominent text
+2. The artist name is usually directly below or next to the song title
+3. Artist names can be multiple words (e.g., "Mason Jar Moonshine", "The Weeknd", "Post Malone")
+4. Song titles can be multiple words (e.g., "I'm Legendary", "Blinding Lights")
+5. DO NOT extract fragments - capture the ENTIRE text for each field
+6. DO NOT extract UI elements like "Play", "Pause", timestamps, or progress bars
+
+Look for the NOW PLAYING section of the interface and extract from there.
+
+Respond with ONLY this JSON format, no other text:
+{"songName":"complete song title here","artist":"complete artist name here","album":"album name or empty string","confidence":0.95}
+
+If you cannot clearly identify both song and artist, respond:
+{"songName":"","artist":"","album":"","confidence":0}`;
+
+type VisionExtractedMetadata = {
+  songName: string;
+  artist: string;
+  album: string;
+  confidence: number;
+};
+
 function scoreLineForTitle(line: InterpretedLine): number {
   return (
     line.features.heightPercentile * 0.45 +
@@ -131,6 +158,107 @@ function toOcrBlocks(words: TesseractWord[]): OcrBlock[] {
   return blocks;
 }
 
+function parseVisionResponse(text: string): VisionExtractedMetadata {
+  const trimmed = text.trim();
+  const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new NoVerifiedResultError("Vision extraction did not return JSON metadata.");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    throw new NoVerifiedResultError("Vision extraction returned invalid JSON metadata.");
+  }
+
+  const candidate = parsed as Partial<VisionExtractedMetadata>;
+  return {
+    songName: typeof candidate.songName === "string" ? candidate.songName.trim() : "",
+    artist: typeof candidate.artist === "string" ? candidate.artist.trim() : "",
+    album: typeof candidate.album === "string" ? candidate.album.trim() : "",
+    confidence: typeof candidate.confidence === "number" ? candidate.confidence : 0,
+  };
+}
+
+async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<OcrCandidateMetadata> {
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) {
+    throw new NoVerifiedResultError("Hugging Face vision is not configured.");
+  }
+
+  const modelUrl = process.env.HUGGINGFACE_VISION_URL ?? "https://router.huggingface.co/v1/chat/completions";
+  const response = await fetch(modelUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.HUGGINGFACE_VISION_MODEL ?? "Qwen/Qwen2.5-VL-7B-Instruct",
+      messages: [
+        { role: "system", content: VISION_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Extract the currently playing track metadata from this screenshot.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/png;base64,${buffer.toString("base64")}`,
+              },
+            },
+          ],
+        },
+      ],
+      temperature: 0,
+      max_tokens: 250,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new NoVerifiedResultError(`Vision extraction failed with status ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new NoVerifiedResultError("Vision extraction returned an empty response.");
+  }
+
+  const extracted = parseVisionResponse(content);
+  console.log("[recognition] Vision extracted JSON:", extracted);
+
+  // Reject obviously fragmented results
+  if (extracted.songName.length < 3 || extracted.artist.length < 3) {
+    console.warn(`[recognition] Vision returned suspiciously short metadata: "${extracted.songName}" by "${extracted.artist}"`);
+    throw new NoVerifiedResultError("Vision extraction produced incomplete metadata.");
+  }
+
+  // Reject single-word artist names that look like fragments
+  // (allow intentional single names like "Drake", "Adele" but flag "Jar", "Moon")
+  const commonSingleWordArtists = ["drake", "adele", "rihanna", "beyonce", "eminem", "metallica"];
+  const artistLower = extracted.artist.toLowerCase();
+  if (!artistLower.includes(" ") &&
+      extracted.artist.length < 6 &&
+      !commonSingleWordArtists.includes(artistLower)) {
+    console.warn(`[recognition] Vision returned likely fragment artist: "${extracted.artist}"`);
+    throw new NoVerifiedResultError("Vision extraction produced incomplete metadata.");
+  }
+
+  return {
+    songName: extracted.songName,
+    artist: extracted.artist,
+    album: extracted.album || UNKNOWN_METADATA.album,
+    confidenceScore: extracted.confidence,
+  };
+}
+
 async function extractMetadataWithOcr(buffer: Buffer, language = "eng"): Promise<OcrCandidateMetadata> {
   const worker = await Tesseract.createWorker(language);
 
@@ -175,7 +303,14 @@ export async function recognizeSongFromAudio(buffer: Buffer, originalName: strin
 }
 
 export async function recognizeSongFromImage(buffer: Buffer, fallbackLanguage = "eng"): Promise<SongMetadata> {
-  const candidate = await extractMetadataWithOcr(buffer, fallbackLanguage);
+  let candidate: OcrCandidateMetadata;
+
+  try {
+    candidate = await extractMetadataWithHuggingFaceVision(buffer);
+  } catch (error) {
+    console.warn("[recognition] Vision extraction unavailable or rejected, falling back to OCR.", error);
+    candidate = await extractMetadataWithOcr(buffer, fallbackLanguage);
+  }
 
   if (!candidate.songName || !candidate.artist || candidate.artist === UNKNOWN_METADATA.artist) {
     return toFallbackResponse(candidate);
