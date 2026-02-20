@@ -229,7 +229,12 @@ export function HomeContent() {
   }
 
   function playSong(song: SongMatch) {
-    addToQueue({ title: song.songName, artist: song.artist, query: `${song.songName} ${song.artist} official audio` });
+    addToQueue({
+      title: song.songName,
+      artist: song.artist,
+      query: `${song.songName} ${song.artist} official audio`,
+      videoId: song.youtubeVideoId ?? song.platformLinks.youtube,
+    });
   }
 
   return (
@@ -289,7 +294,14 @@ export function HomeContent() {
                   onCreatePlaylist={createPlaylist}
                   onDeletePlaylist={deletePlaylist}
                   onRemoveFromPlaylist={removeSongFromPlaylist}
-                  onPlay={(currentTrack) => addToQueue({ title: currentTrack.title, artist: currentTrack.artistName, query: `${currentTrack.title} ${currentTrack.artistName} official audio` })}
+                  onPlay={(currentTrack) =>
+                    addToQueue({
+                      title: currentTrack.title,
+                      artist: currentTrack.artistName,
+                      query: `${currentTrack.title} ${currentTrack.artistName} official audio`,
+                      videoId: currentTrack.youtubeVideoId,
+                    })
+                  }
                 />
               ))}
             </section>

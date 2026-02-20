@@ -78,7 +78,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <Link href="/" className="block select-none">
               <h1 className="logoWrapper flex items-center gap-2">
                 <span className="logoDot"></span>
-                {!isCollapsed && <span className="logoText">PonotAI</span>}
+                {!isCollapsed && <span className="logoText">{language === "bg" ? "ПонотИИ" : "PonotAI"}</span>}
               </h1>
             </Link>
             <button className="navItem !p-2" onClick={() => setIsCollapsed((prev) => !prev)}>{isCollapsed ? "»" : "«"}</button>

@@ -53,8 +53,9 @@ type YouTubeWindow = Window & {
 };
 
 const STORAGE_KEY = "ponotai.player.state.v1";
+const VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
 
-function loadInitialPlayerState() {
+function readStoredState() {
   if (typeof window === "undefined") {
     return { queue: [] as QueueTrack[], activeIndex: 0, volume: 70 };
   }
@@ -77,10 +78,39 @@ function loadInitialPlayerState() {
   }
 }
 
+function normalizeVideoId(input?: string) {
+  if (!input) return undefined;
+  const trimmed = input.trim();
+  if (VIDEO_ID_PATTERN.test(trimmed)) return trimmed;
+
+  try {
+    const url = new URL(trimmed);
+
+    if (url.hostname.includes("youtu.be")) {
+      const shortId = url.pathname.replace(/^\//, "").split("/")[0];
+      if (VIDEO_ID_PATTERN.test(shortId)) return shortId;
+    }
+
+    if (url.hostname.includes("youtube.com")) {
+      const watchId = url.searchParams.get("v");
+      if (watchId && VIDEO_ID_PATTERN.test(watchId)) return watchId;
+
+      const parts = url.pathname.split("/").filter(Boolean);
+      if ((parts[0] === "embed" || parts[0] === "shorts") && parts[1] && VIDEO_ID_PATTERN.test(parts[1])) {
+        return parts[1];
+      }
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
 const PlayerContext = createContext<PlayerContextValue | null>(null);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const initialState = loadInitialPlayerState();
+  const initialState = readStoredState();
   const [queue, setQueue] = useState<QueueTrack[]>(initialState.queue);
   const [activeIndex, setActiveIndex] = useState(initialState.activeIndex);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -175,19 +205,44 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!playerRef.current || !currentTrack) return;
 
-    if (!currentTrack.videoId) {
-      console.warn("[analytics] playback_error reason=no_verified_video_id");
-      return;
+    const resolvedVideoId = normalizeVideoId(currentTrack.videoId);
+
+    if (resolvedVideoId) {
+      playerRef.current.loadVideoById(resolvedVideoId);
+      const startPlayback = window.setTimeout(() => playerRef.current?.playVideo(), 250);
+      return () => window.clearTimeout(startPlayback);
     }
 
-    playerRef.current.loadVideoById(currentTrack.videoId);
+    let cancelled = false;
 
-    const startPlayback = window.setTimeout(() => {
-      playerRef.current?.playVideo();
-    }, 250);
+    (async () => {
+      try {
+        const response = await fetch(`/api/youtube/resolve?query=${encodeURIComponent(currentTrack.query)}`);
+        if (!response.ok) {
+          setPlayerError("Could not resolve a playable YouTube video.");
+          return;
+        }
 
-    return () => window.clearTimeout(startPlayback);
-  }, [currentTrack]);
+        const payload = (await response.json()) as { videoId?: string };
+        const fetchedVideoId = normalizeVideoId(payload.videoId);
+        if (!fetchedVideoId || cancelled) {
+          setPlayerError("Could not resolve a playable YouTube video.");
+          return;
+        }
+
+        setQueue((previous) =>
+          previous.map((item, index) => (index === activeIndex ? { ...item, videoId: fetchedVideoId } : item)),
+        );
+        setPlayerError(null);
+      } catch {
+        if (!cancelled) setPlayerError("Could not resolve a playable YouTube video.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeIndex, currentTrack]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -209,7 +264,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       title: track.title,
       artist: track.artist,
       query: track.query,
-      videoId: track.videoId,
+      videoId: normalizeVideoId(track.videoId),
     };
 
     setQueue((previousQueue) => {
