@@ -96,6 +96,18 @@ export const translations = {
     album_cover: "Album cover",
     toast_cache_loaded: "Loaded OCR results from cache",
     error_audio_capture_failed: "Audio capture failed.",
+    hero_tagline: "Hear a song? Find it instantly.",
+    hero_title: "Recognize Song",
+    recognizing_status: "Listening for music...",
+    upload_modal_title: "Upload image for OCR",
+    upload_modal_hint: "Drop an image here or choose a file",
+    upload_process: "Process image",
+    upload_choose_another: "Choose another image",
+    history_recent: "Recently recognized",
+    empty_results_title: "No recognition yet",
+    empty_results_hint: "Tap the big button and Trackly will start listening.",
+    settings_title: "Recognition settings",
+
   },
   bg: {
     nav_app: "Приложение",
@@ -194,6 +206,18 @@ export const translations = {
     album_cover: "Корица на албум",
     toast_cache_loaded: "Заредени OCR резултати от кеш",
     error_audio_capture_failed: "Грешка при запис на аудио.",
+    hero_tagline: "Чуваш песен? Намери я веднага.",
+    hero_title: "Разпознай песен",
+    recognizing_status: "Слушам за музика...",
+    upload_modal_title: "Качи изображение за OCR",
+    upload_modal_hint: "Пусни изображение тук или избери файл",
+    upload_process: "Обработи изображението",
+    upload_choose_another: "Избери друго изображение",
+    history_recent: "Скоро разпознати",
+    empty_results_title: "Все още няма резултат",
+    empty_results_hint: "Натисни големия бутон и Trackly ще започне да слуша.",
+    settings_title: "Настройки за разпознаване",
+
   }
 };
 

@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import HeroSection from "./HeroSection";
+import ResultCard from "./ResultCard";
+import HistoryGrid from "./HistoryGrid";
+import UploadModal from "./UploadModal";
 import LibrarySidebar from "./LibrarySidebar";
 import TrackCard from "./TrackCard";
 import SongReviewModal from "./SongReviewModal";
@@ -19,29 +23,13 @@ import type { Track } from "../features/tracks/types";
 import { useLanguage } from "../lib/LanguageContext";
 import { t } from "../lib/translations";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type Toast = {
-  id: string;
-  kind: "success" | "error" | "info";
-  message: string;
-};
-
-type HistoryEntry = {
-  id: string;
-  source: "audio" | "ocr";
-  createdAt: string;
-  song: SongMatch;
-};
-
-// ─── Constants ───────────────────────────────────────────────────────────────
+type Toast = { id: string; kind: "success" | "error" | "info"; message: string };
+type HistoryEntry = { id: string; source: "audio" | "ocr"; createdAt: string; song: SongMatch };
 
 const IMAGE_MAX_MB = 10;
 const IMAGE_MIME_WHITELIST = ["image/png", "image/jpeg", "image/webp"];
 const HISTORY_KEY = "trackly-history";
 const THEME_KEY = "trackly-theme";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function songMatchToRecognitionResult(match: SongMatch, source: "audio" | "image"): SongRecognitionResult {
   return { ...match, source };
@@ -53,65 +41,42 @@ function toRecognizedTrack(result: SongRecognitionResult): Track {
     title: result.songName,
     artistName: result.artist,
     artistId: `artist-${result.artist}`.toLowerCase().replace(/\s+/g, "-"),
-    artworkUrl: "https://picsum.photos/seed/recognized/80",
+    artworkUrl: result.albumArtUrl || "https://picsum.photos/seed/recognized/80",
     license: "COPYRIGHTED",
   };
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
-
 export function HomeContent() {
-  // Recognition results
   const [audioResult, setAudioResult] = useState<AudioRecognitionResult | null>(null);
   const [imageResult, setImageResult] = useState<ImageRecognitionResult | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [pendingImageResult, setPendingImageResult] = useState<ImageRecognitionResult | null>(null);
-
-  // OCR settings
-  const [maxSongs, setMaxSongs] = useState(10);
-  const [ocrLanguage, setOcrLanguage] = useState("eng");
-
-  // Loading states
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
-  const [progressVisible, setProgressVisible] = useState(false);
-
-  // Errors
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [globalError, setGlobalError] = useState<string | null>(null);
-
-  // UI state
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [isDragOver, setIsDragOver] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-
-  // History
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [historySearch, setHistorySearch] = useState("");
-  const [onlyToday, setOnlyToday] = useState(false);
+  const [maxSongs, setMaxSongs] = useState(10);
+  const [ocrLanguage, setOcrLanguage] = useState("eng");
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
 
-  // Refs
   const imageCache = useRef<Map<string, ImageRecognitionResult>>(new Map());
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Hooks
   const { addToQueue } = usePlayer();
   const { language, setLanguage } = useLanguage();
-  const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist } =
-    useLibrary();
+  const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist } = useLibrary();
 
-  const isLoading = isLoadingAudio || isLoadingImage || isRecording;
-
-  // Derive a flat SongRecognitionResult for TrackCard/LibrarySidebar from whichever result is active
   const latestResult: SongRecognitionResult | null = useMemo(() => {
     if (audioResult) return songMatchToRecognitionResult(audioResult.primaryMatch, "audio");
     if (imageResult?.songs[0]) return songMatchToRecognitionResult(imageResult.songs[0], "image");
     return null;
   }, [audioResult, imageResult]);
 
-  // Build tracks list (recognized track + seed tracks, deduplicated)
   const tracks = useMemo(() => {
     const recognizedTrack = latestResult ? [toRecognizedTrack(latestResult)] : [];
     const uniqueTracks = new Map<string, Track>();
@@ -119,96 +84,76 @@ export function HomeContent() {
     return [...uniqueTracks.values()];
   }, [latestResult]);
 
-  // ─── Effects ───────────────────────────────────────────────────────────────
-
   useEffect(() => {
     const savedTheme = localStorage.getItem(THEME_KEY);
     if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
-
     const savedHistory = localStorage.getItem(HISTORY_KEY);
     if (savedHistory) {
-      try { setHistory(JSON.parse(savedHistory) as HistoryEntry[]); } catch { setHistory([]); }
+      try {
+        setHistory(JSON.parse(savedHistory) as HistoryEntry[]);
+      } catch {
+        setHistory([]);
+      }
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 10)));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 18)));
   }, [history]);
 
   useEffect(() => {
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  // ─── Toast helpers ─────────────────────────────────────────────────────────
-
   function pushToast(kind: Toast["kind"], message: string) {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const id = crypto.randomUUID();
     setToasts((prev) => [...prev, { id, kind, message }]);
-    window.setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
+    window.setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }
-
-  // ─── History helpers ───────────────────────────────────────────────────────
 
   function addToHistory(source: HistoryEntry["source"], songs: SongMatch[]) {
-    const entries = songs.map((song, i) => ({
-      id: `${Date.now()}-${source}-${i}-${song.songName}`,
-      source,
-      createdAt: new Date().toISOString(),
-      song,
-    }));
-    setHistory((prev) => [...entries, ...prev].slice(0, 10));
+    const createdAt = new Date().toISOString();
+    const entries = songs.map((song) => ({ id: crypto.randomUUID(), source, createdAt, song }));
+    setHistory((prev) => [...entries, ...prev].slice(0, 18));
   }
-
-  // ─── Audio ─────────────────────────────────────────────────────────────────
 
   async function recordAudioClip(durationMs: number): Promise<Blob> {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     return new Promise((resolve, reject) => {
       const chunks: Blob[] = [];
       const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      mediaRecorder.ondataavailable = (e: BlobEvent) => { if (e.data.size > 0) chunks.push(e.data); };
+      mediaRecorder.ondataavailable = (event: BlobEvent) => event.data.size > 0 && chunks.push(event.data);
       mediaRecorder.onerror = () => reject(new Error(t("error_audio_capture_failed", language)));
       mediaRecorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
+        stream.getTracks().forEach((track) => track.stop());
         resolve(new Blob(chunks, { type: "audio/webm" }));
       };
       mediaRecorder.start();
-      window.setTimeout(() => { if (mediaRecorder.state !== "inactive") mediaRecorder.stop(); }, Math.min(durationMs, 10_000));
+      window.setTimeout(() => mediaRecorder.state !== "inactive" && mediaRecorder.stop(), Math.min(durationMs, 10_000));
     });
   }
 
   async function handleRecognizeAudio() {
-    if (isLoading) return;
+    if (isLoadingAudio || isLoadingImage) return;
     setErrorMessage(null);
-    setGlobalError(null);
-    setAudioResult(null);
-    setImageResult(null);
-    setProgressVisible(true);
     setIsLoadingAudio(true);
-
+    setIsRecording(true);
     try {
-      setIsRecording(true);
       const audioBlob = await recordAudioClip(8_000);
       setIsRecording(false);
       const recognized = await recognizeFromAudio(audioBlob);
       setAudioResult(recognized);
+      setImageResult(null);
       addToHistory("audio", [recognized.primaryMatch]);
       pushToast("success", t("toast_recognized", language, { song: recognized.primaryMatch.songName }));
     } catch (error) {
-      const message = (error as Error).message || t("toast_audio_failed", language);
-      setErrorMessage(message);
-      if (message.toLowerCase().includes("failed") || message.toLowerCase().includes("network")) {
-        setGlobalError(t("toast_audio_failed", language));
-      }
+      setErrorMessage((error as Error).message || t("toast_audio_failed", language));
       pushToast("error", t("toast_audio_failed", language));
     } finally {
       setIsRecording(false);
       setIsLoadingAudio(false);
-      setProgressVisible(false);
     }
   }
-
-  // ─── Image / OCR ───────────────────────────────────────────────────────────
 
   function validateImage(file: File): string | null {
     if (!IMAGE_MIME_WHITELIST.includes(file.type)) return t("toast_unsupported_type", language);
@@ -216,374 +161,114 @@ export function HomeContent() {
     return null;
   }
 
-  async function processImage(file: File) {
+  function handleSelectUploadFile(file: File) {
     const validationError = validateImage(file);
     if (validationError) {
       setErrorMessage(validationError);
       pushToast("error", validationError);
       return;
     }
-
-    const cacheKey = `${file.name}-${file.size}-${maxSongs}-${ocrLanguage}`;
+    setUploadFile(file);
+    setUploadPreview(URL.createObjectURL(file));
     setErrorMessage(null);
-    setGlobalError(null);
-    setAudioResult(null);
-    setImageResult(null);
-    setShowReviewModal(false);
-    setPendingImageResult(null);
-    setIsLoadingImage(true);
-    setProgressVisible(true);
+  }
 
+  async function handleSubmitUpload() {
+    if (!uploadFile) return;
+    setIsLoadingImage(true);
     try {
+      const cacheKey = `${uploadFile.name}-${uploadFile.size}-${maxSongs}-${ocrLanguage}`;
       if (imageCache.current.has(cacheKey)) {
         const cachedResult = imageCache.current.get(cacheKey)!;
         setPendingImageResult(cachedResult);
         setShowReviewModal(true);
+        setIsUploadOpen(false);
         pushToast("info", t("toast_cache_loaded", language));
         return;
       }
 
-      const recognized = await recognizeFromImage(file, maxSongs, ocrLanguage);
+      const recognized = await recognizeFromImage(uploadFile, maxSongs, ocrLanguage);
       imageCache.current.set(cacheKey, recognized);
       setPendingImageResult(recognized);
       setShowReviewModal(true);
+      setIsUploadOpen(false);
       pushToast("info", t("toast_found_review", language, { count: recognized.count }));
     } catch (error) {
-      const message = (error as Error).message || t("error_recognition_failed", language);
-      setErrorMessage(message);
-      if (message.toLowerCase().includes("failed") || message.toLowerCase().includes("network")) {
-        setGlobalError(t("toast_image_failed", language));
-      }
+      setErrorMessage((error as Error).message || t("error_recognition_failed", language));
       pushToast("error", t("toast_image_failed", language));
     } finally {
       setIsLoadingImage(false);
-      setProgressVisible(false);
     }
   }
 
-  async function handleImageSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await processImage(file);
-    event.target.value = "";
-  }
-
-  function handleUploadPhotoClick() {
-    if (isLoading) return;
-    fileInputRef.current?.click();
-  }
-
-  async function onDropImage(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setIsDragOver(false);
-    const file = event.dataTransfer.files?.[0];
-    if (!file) return;
-    await processImage(file);
-  }
-
-  // ─── Save to history ───────────────────────────────────────────────────────
-
-  function saveSong(song: SongMatch) {
-    addToHistory("audio", [song]);
-    pushToast("success", t("toast_saved", language, { song: song.songName }));
-  }
-
-
   function handleConfirmSongs(selectedSongs: SongMatch[]) {
     if (!pendingImageResult) return;
-
-    const updatedResult = {
-      ...pendingImageResult,
-      songs: selectedSongs,
-      count: selectedSongs.length,
-    };
-
+    const updatedResult = { ...pendingImageResult, songs: selectedSongs, count: selectedSongs.length };
     setImageResult(updatedResult);
+    setAudioResult(null);
     addToHistory("ocr", selectedSongs);
     setShowReviewModal(false);
     setPendingImageResult(null);
     pushToast("success", t("toast_added", language, { count: selectedSongs.length }));
   }
 
-  function handleCancelReview() {
-    setShowReviewModal(false);
-    setPendingImageResult(null);
+  function saveSong(song: SongMatch) {
+    addToHistory("audio", [song]);
+    pushToast("success", t("toast_saved", language, { song: song.songName }));
   }
 
-  // ─── Filtered history ──────────────────────────────────────────────────────
-
-  const filteredHistory = useMemo(() => {
-    const query = historySearch.toLowerCase().trim();
-    return history.filter((entry) => {
-      const isToday = new Date(entry.createdAt).toDateString() === new Date().toDateString();
-      const searchMatch =
-        !query ||
-        entry.song.artist.toLowerCase().includes(query) ||
-        entry.song.songName.toLowerCase().includes(query);
-      return (onlyToday ? isToday : true) && searchMatch;
-    });
-  }, [history, historySearch, onlyToday]);
-
-  // ─── Render ────────────────────────────────────────────────────────────────
+  function playSong(song: SongMatch) {
+    addToQueue({ title: song.songName, artist: song.artist, query: `${song.songName} ${song.artist} official audio` });
+  }
 
   const pageStyle =
-    theme === "dark"
-      ? { background: "rgba(9,10,16,0.2)", color: "#f1f3ff" }
-      : { background: "rgba(244,247,255,0.9)", color: "#0d1321" };
+    theme === "dark" ? { background: "rgba(9,10,16,0.2)", color: "#f1f3ff" } : { background: "rgba(244,247,255,0.9)", color: "#0d1321" };
 
   return (
     <main className="min-h-screen" style={pageStyle}>
-      {/* Progress bar */}
-      {progressVisible && (
-        <div className="fixed left-0 top-0 z-40 h-[3px] w-full animate-pulse bg-violet-400" />
-      )}
-
-      {/* Global error banner */}
-      {globalError && (
-        <div className="fixed left-0 right-0 top-0 z-50 bg-red-600 px-6 py-3 text-white shadow-lg">
-          <div className="mx-auto flex max-w-5xl items-center justify-between">
-            <p>{globalError}</p>
-            <button onClick={() => setGlobalError(null)}>✕</button>
-          </div>
-        </div>
-      )}
-
-      {/* Recording overlay */}
-      {isRecording && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm">
-          <div className="rounded-2xl border border-red-400/40 bg-black/60 px-10 py-8 text-center">
-            <div className="mx-auto mb-3 h-8 w-8 animate-ping rounded-full bg-red-500" />
-            <p className="text-lg">{t("listening", language)}</p>
-            <button
-              onClick={() => setIsRecording(false)}
-              className="mt-4 rounded-lg border border-white/25 px-4 py-2"
-            >
-              {t("stop", language)}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        {/* Header */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-4xl font-semibold">{t("app_title", language)}</h1>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded border border-white/20 px-3 py-2 text-sm hover:bg-white/10"
-              onClick={() => setIsLibraryOpen((prev) => !prev)}
-            >
-              {isLibraryOpen ? t("hide_library", language) : t("show_library", language)}
-            </button>
-            <button
-              onClick={() =>
-                setLanguage(language === "en" ? "bg" : "en")
-              }
-              className="rounded-lg border border-white/20 px-3 py-2 text-sm"
-            >
-              {language === "en" ? "🇧🇬 БГ" : "🇬🇧 EN"}
-            </button>
-            <button
-              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-              className="rounded-lg border border-white/20 px-3 py-2 text-sm"
-            >
-              {theme === "dark" ? t("theme_light", language) : t("theme_dark", language)}
-            </button>
-          </div>
-        </div>
-
-        {/* OCR settings row */}
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-white/15 p-4">
-            <label htmlFor="maxSongsInput" className="mb-2 block text-sm">{t("stats_max_ocr_songs", language)}</label>
-            <input
-              id="maxSongsInput"
-              type="number"
-              min={1}
-              max={20}
-              value={maxSongs}
-              onChange={(e) => setMaxSongs(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
-              className="w-28 rounded-md border border-white/20 bg-black/20 px-3 py-2"
-            />
-          </div>
-          <div className="rounded-xl border border-white/15 p-4">
-            <label htmlFor="ocrLanguage" className="mb-2 block text-sm">{t("stats_ocr_language", language)}</label>
-            <select
-              id="ocrLanguage"
-              value={ocrLanguage}
-              onChange={(e) => setOcrLanguage(e.target.value)}
-              className="rounded-md border border-white/20 bg-black/20 px-3 py-2"
-            >
-              <option value="eng">{t("ocr_lang_english", language)}</option>
-              <option value="spa">{t("ocr_lang_spanish", language)}</option>
-              <option value="fra">{t("ocr_lang_french", language)}</option>
-              <option value="deu">{t("ocr_lang_german", language)}</option>
-              <option value="ita">{t("ocr_lang_italian", language)}</option>
-              <option value="por">{t("ocr_lang_portuguese", language)}</option>
-            </select>
-          </div>
-          <div className="rounded-xl border border-white/15 p-4 text-sm opacity-80">
-            <strong>{t("stats_flow", language)}</strong>
-          </div>
-        </div>
-
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8">
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-          <section>
-            {/* Action buttons */}
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <button
-                id="recognizeAudioBtn"
-                onClick={handleRecognizeAudio}
-                disabled={isLoading}
-                className="primaryBtn disabled:opacity-50"
-              >
-                {isLoadingAudio ? `${t("btn_recognize_audio", language)}...` : t("btn_recognize_audio", language)}
-              </button>
-              <button
-                id="uploadPhotoBtn"
-                onClick={handleUploadPhotoClick}
-                disabled={isLoading}
-                className="secondaryBtn disabled:opacity-50"
-              >
-                {isLoadingImage ? `${t("btn_upload_photo", language)}...` : t("btn_upload_photo", language)}
-              </button>
-              <button
-                onClick={handleRecognizeAudio}
-                disabled={isLoading}
-                className="secondaryBtn disabled:opacity-50"
-              >
-                {t("btn_retry_filtering", language)}
-              </button>
-            </div>
-
-            {/* Drag-and-drop zone */}
-            <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-              onDragLeave={() => setIsDragOver(false)}
-              onDrop={onDropImage}
-              onClick={handleUploadPhotoClick}
-              className={`mt-4 cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition ${
-                isDragOver ? "border-violet-400 bg-violet-500/10" : "border-white/25"
-              }`}
-            >
-              <p className="text-lg">{t("drag_drop_text", language)}</p>
-              <p className="mt-2 text-sm opacity-70">{t("drag_drop_hint", language, { max: IMAGE_MAX_MB })}</p>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={handleImageSelected}
-              className="hidden"
+          <div className="space-y-6">
+            <HeroSection
+              language={language}
+              isListening={isRecording || isLoadingAudio}
+              onRecognize={handleRecognizeAudio}
+              onOpenUpload={() => setIsUploadOpen(true)}
+              onToggleLanguage={() => setLanguage(language === "en" ? "bg" : "en")}
+              onToggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              onToggleLibrary={() => setIsLibraryOpen((prev) => !prev)}
+              isLibraryOpen={isLibraryOpen}
+              theme={theme}
             />
 
-            {errorMessage && <p className="mt-2 text-sm text-red-400">⚠️ {errorMessage}</p>}
+            <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
+              <h3 className="mb-4 text-lg font-semibold">{t("settings_title", language)}</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1 block text-white/70">{t("stats_max_ocr_songs", language)}</span>
+                  <input type="number" min={1} max={20} value={maxSongs} onChange={(e) => setMaxSongs(Math.min(20, Math.max(1, Number(e.target.value) || 1)))} className="w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 focus:border-violet-300 focus:outline-none" />
+                </label>
+                <label className="text-sm">
+                  <span className="mb-1 block text-white/70">{t("stats_ocr_language", language)}</span>
+                  <select value={ocrLanguage} onChange={(e) => setOcrLanguage(e.target.value)} className="w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 focus:border-violet-300 focus:outline-none">
+                    <option value="eng">{t("ocr_lang_english", language)}</option>
+                    <option value="spa">{t("ocr_lang_spanish", language)}</option>
+                    <option value="fra">{t("ocr_lang_french", language)}</option>
+                    <option value="deu">{t("ocr_lang_german", language)}</option>
+                    <option value="ita">{t("ocr_lang_italian", language)}</option>
+                    <option value="por">{t("ocr_lang_portuguese", language)}</option>
+                  </select>
+                </label>
+              </div>
+            </section>
 
-            {/* Audio result card */}
-            {audioResult && (
-              <section className="mt-8 rounded-2xl border border-white/15 p-6">
-                <div className="flex flex-col gap-4 sm:flex-row">
-                  <img
-                    src={audioResult.primaryMatch.albumArtUrl}
-                    alt={t("album_cover", language)}
-                    className="h-28 w-28 rounded-xl object-cover"
-                  />
-                  <div>
-                    <h2 className="text-2xl font-semibold">{audioResult.primaryMatch.songName}</h2>
-                    <p className="text-lg opacity-85">{audioResult.primaryMatch.artist}</p>
-                    <p className="mt-2 text-sm opacity-80">
-                      {t("confidence", language)} {Math.round(audioResult.primaryMatch.confidence * 100)}% •{" "}
-                      {audioResult.primaryMatch.genre} • {audioResult.primaryMatch.releaseYear} •{" "}
-                      {audioResult.primaryMatch.durationSec}s
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.spotify} target="_blank" rel="noreferrer">🎵 {t("btn_spotify", language)}</a>
-                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.appleMusic} target="_blank" rel="noreferrer">🍎 {t("btn_apple_music", language)}</a>
-                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.youtubeMusic} target="_blank" rel="noreferrer">▶ {t("btn_youtube_music", language)}</a>
-                      <button
-                        className="primaryBtn"
-                        onClick={() => addToQueue({
-                          title: audioResult.primaryMatch.songName,
-                          artist: audioResult.primaryMatch.artist,
-                          query: `${audioResult.primaryMatch.songName} ${audioResult.primaryMatch.artist} official audio`,
-                        })}
-                      >
-                        ▶ {t("btn_play_in_player", language)}
-                      </button>
-                      <button className="secondaryBtn" onClick={() => saveSong(audioResult.primaryMatch)}>
-                        {t("btn_save", language)}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+            {errorMessage && <p className="rounded-2xl border border-red-300/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{errorMessage}</p>}
 
-                {audioResult.alternatives.length > 0 && (
-                  <>
-                    <h3 className="mt-5 text-sm uppercase tracking-wide opacity-70">{t("alternative_matches", language)}</h3>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                      {audioResult.alternatives.map((song) => (
-                        <div key={song.songName} className="rounded-xl border border-white/10 p-3 text-sm">
-                          {song.songName} — {song.artist} ({Math.round(song.confidence * 100)}%)
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </section>
-            )}
+            <ResultCard language={language} song={latestResult} onSave={saveSong} onPlay={playSong} />
 
-            {/* Image / OCR result card */}
-            {imageResult && (
-              <section className="mt-8 rounded-2xl border border-white/15 p-6">
-                <h2 className="text-xl font-semibold">{t("confirmed_songs", language)} ({imageResult.count})</h2>
-                <p className="mt-1 text-sm opacity-75">{t("language_label", language)}: {imageResult.language}</p>
-                <div className="mt-4 space-y-3">
-                  {imageResult.songs.map((song, index) => (
-                    <div
-                      key={`${song.songName}-${song.artist}-${index}`}
-                      className="rounded-xl border border-white/10 p-4"
-                    >
-                      <div className="flex items-start gap-3">
-                        <img src={song.albumArtUrl} alt={t("album_cover", language)} className="h-16 w-16 rounded-lg object-cover" />
-                        <div className="flex-1">
-                          <p className="text-lg font-medium">{index + 1}. {song.songName}</p>
-                          <p className="opacity-80">{song.artist}</p>
-                          <p className="text-sm opacity-70">
-                            {song.album} • {song.genre} • {song.releaseYear} •{" "}
-                            {Math.round(song.confidence * 100)}%
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <button
-                              className="primaryBtn text-xs"
-                              onClick={() => addToQueue({
-                                title: song.songName,
-                                artist: song.artist,
-                                query: `${song.songName} ${song.artist} official audio`,
-                              })}
-                            >
-                              ▶ {t("btn_play", language)}
-                            </button>
-                            {song.platformLinks.spotify && (
-                              <a className="miniBtn text-xs" href={song.platformLinks.spotify} target="_blank" rel="noreferrer">
-                                {t("btn_spotify", language)}
-                              </a>
-                            )}
-                            <button className="secondaryBtn text-xs" onClick={() => saveSong(song)}>
-                              {t("btn_save", language)}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+            <HistoryGrid language={language} items={history} onDelete={(id) => setHistory((prev) => prev.filter((entry) => entry.id !== id))} />
 
-            {/* Songs / TrackCards */}
-            <div className="mt-8 space-y-3">
+            <section className="space-y-3">
               <h2 className="text-xl font-semibold">{t("songs_heading", language)}</h2>
               {tracks.map((track) => (
                 <TrackCard
@@ -593,114 +278,46 @@ export function HomeContent() {
                   isFavorite={favoritesSet.has(track.id)}
                   onToggleFavorite={toggleFavorite}
                   onAddToPlaylist={addSongToPlaylist}
-                  onCreatePlaylist={(name) => createPlaylist(name)}
+                  onCreatePlaylist={createPlaylist}
                   onDeletePlaylist={deletePlaylist}
-                  onPlay={(t) =>
-                    addToQueue({
-                      title: t.title,
-                      artist: t.artistName,
-                      query: `${t.title} ${t.artistName} official audio`,
-                    })
-                  }
+                  onPlay={(currentTrack) => addToQueue({ title: currentTrack.title, artist: currentTrack.artistName, query: `${currentTrack.title} ${currentTrack.artistName} official audio` })}
                 />
               ))}
-            </div>
-
-            {/* History */}
-            <section className="mt-10 rounded-2xl border border-white/15 p-6">
-              <div className="mb-4 flex flex-wrap items-center gap-3">
-                <h2 className="text-xl font-semibold">{t("history_title", language)}</h2>
-                <input
-                  value={historySearch}
-                  onChange={(e) => setHistorySearch(e.target.value)}
-                  placeholder={t("history_search_placeholder", language)}
-                  className="rounded-lg border border-white/20 bg-transparent px-3 py-2 text-sm"
-                />
-                <label className="text-sm">
-                  <input
-                    type="checkbox"
-                    checked={onlyToday}
-                    onChange={(e) => setOnlyToday(e.target.checked)}
-                    className="mr-2"
-                  />
-                  {t("history_today_only", language)}
-                </label>
-                <button
-                  onClick={() => setHistory([])}
-                  className="rounded-lg border border-red-400/40 px-3 py-2 text-sm text-red-300"
-                >
-                  {t("history_clear", language)}
-                </button>
-              </div>
-
-              {filteredHistory.length === 0 ? (
-                <div className="rounded-xl border border-white/10 p-8 text-center opacity-70">
-                  <p className="text-lg">{t("history_empty", language)}</p>
-                  <p className="text-sm">{t("history_empty_hint", language)}</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredHistory.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2 text-sm"
-                    >
-                      <span>{entry.song.songName} — {entry.song.artist}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="opacity-60">{new Date(entry.createdAt).toLocaleString()}</span>
-                        <button
-                          onClick={() => setHistory((prev) => prev.filter((item) => item.id !== entry.id))}
-                          className="text-red-300"
-                        >
-                          {t("history_delete", language)}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </section>
-          </section>
+          </div>
 
-          {/* Library sidebar */}
-          {isLibraryOpen && (
-            <LibrarySidebar playlists={playlists} tracks={tracks} favoritesSet={favoritesSet} />
-          )}
+          {isLibraryOpen && <LibrarySidebar playlists={playlists} tracks={tracks} favoritesSet={favoritesSet} />}
         </div>
       </div>
 
-      {/* Toast notifications */}
-      <div className="fixed bottom-4 right-4 z-50 flex w-[320px] flex-col gap-3">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`relative overflow-hidden rounded-xl border px-4 py-3 shadow-xl ${
-              toast.kind === "success"
-                ? "border-emerald-300/40 bg-emerald-500/15"
-                : toast.kind === "error"
-                ? "border-red-300/40 bg-red-500/15"
-                : "border-sky-300/40 bg-sky-500/15"
-            }`}
-          >
-            <button
-              className="absolute right-2 top-2"
-              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
-            >
-              ✕
-            </button>
-            <p className="pr-6 text-sm">{toast.message}</p>
-            <div className="absolute bottom-0 left-0 h-[2px] w-full animate-[shrink_4s_linear_forwards] bg-white/80" />
-          </div>
-        ))}
-      </div>
+      <UploadModal
+        language={language}
+        open={isUploadOpen}
+        previewUrl={uploadPreview}
+        onClose={() => setIsUploadOpen(false)}
+        onSelectFile={handleSelectUploadFile}
+        onSubmit={handleSubmitUpload}
+        disabled={isLoadingImage}
+      />
 
       {showReviewModal && pendingImageResult && (
         <SongReviewModal
           songs={pendingImageResult.songs}
           onConfirm={handleConfirmSongs}
-          onCancel={handleCancelReview}
+          onCancel={() => {
+            setShowReviewModal(false);
+            setPendingImageResult(null);
+          }}
         />
       )}
+
+      <div className="fixed bottom-4 right-4 z-50 flex w-[320px] flex-col gap-3">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`rounded-xl border px-4 py-3 shadow-xl ${toast.kind === "success" ? "border-emerald-300/40 bg-emerald-500/15" : toast.kind === "error" ? "border-red-300/40 bg-red-500/15" : "border-sky-300/40 bg-sky-500/15"}`}>
+            <p className="text-sm">{toast.message}</p>
+          </div>
+        ))}
+      </div>
     </main>
   );
 }
