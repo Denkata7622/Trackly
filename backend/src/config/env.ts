@@ -57,20 +57,21 @@ export function validateEnvironment(): void {
 
   const auddToken = process.env.AUDD_API_TOKEN?.trim() || process.env.AUDD_API_KEY?.trim();
   const youtubeKey = process.env.YOUTUBE_API_KEY?.trim();
+  const acrKey = process.env.ACRCLOUD_ACCESS_KEY?.trim();
+  const acrSecret = process.env.ACRCLOUD_ACCESS_SECRET?.trim();
+  const acrHost = process.env.ACRCLOUD_HOST?.trim();
 
-  const missing: string[] = [];
-
-  if (!auddToken) {
-    missing.push("AUDD_API_TOKEN (or AUDD_API_KEY)");
-  } else {
+  if (auddToken) {
     process.env.AUDD_API_TOKEN = auddToken;
   }
 
-  if (!youtubeKey) {
-    missing.push("YOUTUBE_API_KEY");
+  const hasAcrCloud = Boolean(acrKey && acrSecret && acrHost);
+
+  if (!auddToken && !hasAcrCloud) {
+    console.warn("[env] No external audio providers fully configured (AuDD/ACRCloud). Recognition will rely on Shazam fallback and local tags.");
   }
 
-  if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+  if (!youtubeKey) {
+    console.warn("[env] YOUTUBE_API_KEY missing. Verified YouTube links may be unavailable.");
   }
 }

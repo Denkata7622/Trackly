@@ -1,4 +1,5 @@
 import Tesseract from "tesseract.js";
+import { parseBuffer } from "music-metadata";
 import { interpretOcr, type InterpretedLine, type OcrBlock } from "./ocrInterpreter";
 import {
   lookupSongByTitleAndArtist,
@@ -6,6 +7,8 @@ import {
   recognizeAudioWithAudd,
   type ProviderSongMetadata,
 } from "./providers/audd.provider";
+import { recognizeWithAcrCloud } from "./providers/acrcloud.provider";
+import { recognizeWithShazam } from "./providers/shazam.provider";
 
 export type SongMetadata = ProviderSongMetadata & {
   source: "provider" | "ocr_fallback";
@@ -39,6 +42,54 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
+
+
+const MIN_PROVIDER_CONFIDENCE = 0.7;
+
+async function ensureYoutubeLink(metadata: ProviderSongMetadata): Promise<ProviderSongMetadata> {
+  if (metadata.youtubeVideoId) {
+    return metadata;
+  }
+
+  const lookedUp = await lookupSongByTitleAndArtist(metadata.songName, metadata.artist);
+  if (!lookedUp?.youtubeVideoId) {
+    return metadata;
+  }
+
+  return {
+    ...metadata,
+    youtubeVideoId: lookedUp.youtubeVideoId,
+    platformLinks: {
+      ...metadata.platformLinks,
+      youtube: lookedUp.platformLinks.youtube,
+    },
+  };
+}
+
+async function extractMetadataFromLocalTags(buffer: Buffer): Promise<ProviderSongMetadata | null> {
+  try {
+    const parsed = await parseBuffer(buffer, { mimeType: "audio/webm" }, { duration: false });
+    const title = parsed.common.title?.trim();
+    const artist = parsed.common.artist?.trim();
+
+    if (!title || !artist) {
+      return null;
+    }
+
+    return {
+      songName: title,
+      artist,
+      album: parsed.common.album?.trim() || "Unknown Album",
+      genre: parsed.common.genre?.[0] || "Unknown Genre",
+      releaseYear: typeof parsed.common.year === "number" ? parsed.common.year : null,
+      confidenceScore: 0.55,
+      youtubeVideoId: undefined,
+      platformLinks: {},
+    };
+  } catch {
+    return null;
+  }
+}
 
 const VISION_SYSTEM_PROMPT = `You are analyzing a music screenshot (Spotify playlist, Apple Music library, YouTube Music queue, now playing screen, etc.).
 
@@ -121,6 +172,7 @@ function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
     platformLinks: {},
     youtubeVideoId: undefined,
     releaseYear: null,
+    confidenceScore: metadata.confidenceScore,
     source: "ocr_fallback",
     verificationStatus: "not_found",
   };
@@ -284,13 +336,58 @@ async function extractMetadataWithOcr(buffer: Buffer, language = "eng"): Promise
 }
 
 export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
-  const providerResult = await recognizeAudioWithAudd(buffer, originalName);
+  const providers: Array<{
+    name: string;
+    run: () => Promise<ProviderSongMetadata | null>;
+  }> = [
+    {
+      name: "AuDD",
+      run: () => recognizeAudioWithAudd(buffer, originalName),
+    },
+    {
+      name: "ACRCloud",
+      run: () => recognizeWithAcrCloud(buffer, originalName),
+    },
+    {
+      name: "Shazam",
+      run: () => recognizeWithShazam(buffer, originalName),
+    },
+  ];
 
-  if (providerResult?.youtubeVideoId) {
-    return toProviderResponse(providerResult);
+  for (const provider of providers) {
+    console.log(`[recognition] Trying ${provider.name}...`);
+
+    try {
+      const candidate = await provider.run();
+      if (!candidate) {
+        console.log(`[recognition] ${provider.name} failed: no match`);
+        continue;
+      }
+
+      const confidence = candidate.confidenceScore ?? 0;
+      if (confidence < MIN_PROVIDER_CONFIDENCE) {
+        console.log(`[recognition] ${provider.name} failed: low confidence (${confidence.toFixed(2)})`);
+        continue;
+      }
+
+      const enriched = await ensureYoutubeLink(candidate);
+      console.log(`[recognition] ✓ ${provider.name} found: "${enriched.songName}" by "${enriched.artist}" (confidence: ${confidence.toFixed(2)})`);
+      return toProviderResponse(enriched);
+    } catch (error) {
+      console.warn(`[recognition] ${provider.name} error:`, (error as Error).message);
+    }
   }
 
-  throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
+  console.log("[recognition] Provider chain exhausted, trying local metadata tags...");
+  const localTagResult = await extractMetadataFromLocalTags(buffer);
+
+  if (localTagResult) {
+    const enrichedTags = await ensureYoutubeLink(localTagResult);
+    console.log(`[recognition] ✓ Local tags found: "${enrichedTags.songName}" by "${enrichedTags.artist}"`);
+    return toProviderResponse(enrichedTags);
+  }
+
+  throw new NoVerifiedResultError("Recognition failed across all providers and local metadata tags.");
 }
 
 export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): Promise<SongMetadata[]> {

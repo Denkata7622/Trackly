@@ -3,6 +3,7 @@ export type ProviderSongMetadata = {
   artist: string;
   album: string;
   genre: string;
+  confidenceScore: number;
   platformLinks: {
     youtube?: string;
     appleMusic?: string;
@@ -177,7 +178,7 @@ export async function recognizeAudioWithAudd(buffer: Buffer, filename: string): 
   formData.append("return", "spotify,apple_music");
 
   const response = await fetchWithRetry(
-    "https://api.audd.io/",
+    process.env.AUDD_API_URL || "https://api.audd.io/",
     { method: "POST", body: formData, signal: AbortSignal.timeout(12000) },
     { attempts: 3, baseDelayMs: 400 },
   );
@@ -207,6 +208,7 @@ export async function recognizeAudioWithAudd(buffer: Buffer, filename: string): 
     album: readAlbum(payload.result.album) || "Unknown Album",
     genre: "Unknown Genre",
     releaseYear: getReleaseYear(payload.result.release_date),
+    confidenceScore: 0.85,
     youtubeVideoId: youtubeVideoId ?? undefined,
     platformLinks: {
       youtube: youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : undefined,
@@ -233,6 +235,7 @@ export async function lookupSongByTitleAndArtist(title: string, artist: string):
     album: "Unknown Album",
     genre: "Unknown Genre",
     releaseYear: null,
+    confidenceScore: 0.8,
     youtubeVideoId,
     platformLinks: {
       youtube: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
