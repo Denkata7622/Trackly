@@ -3,9 +3,17 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import LibrarySidebar from "../components/LibrarySidebar";
 import { usePlayer } from "../components/PlayerProvider";
+import SongReviewModal from "../components/SongReviewModal";
 import TrackCard from "../components/TrackCard";
 import { useLibrary } from "../features/library/useLibrary";
-import { recognizeFromAudio, recognizeFromImage, RecognitionError, type SongRecognitionResult } from "../features/recognition/api";
+import {
+  recognizeFromAudio,
+  recognizeFromImage,
+  RecognitionError,
+  type ImageRecognitionResult,
+  type SongMatch,
+  type SongRecognitionResult,
+} from "../features/recognition/api";
 import { recentTracksSeed } from "../features/tracks/seed";
 import type { Track } from "../features/tracks/types";
 
@@ -20,8 +28,23 @@ function toRecognizedTrack(result: SongRecognitionResult): Track {
   };
 }
 
+function songMatchToTrack(song: SongMatch): Track {
+  return {
+    id: `history-${song.songName}-${song.artist}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`.toLowerCase().replace(/\s+/g, "-"),
+    title: song.songName,
+    artistName: song.artist,
+    artistId: `artist-${song.artist}`.toLowerCase().replace(/\s+/g, "-"),
+    artworkUrl: song.albumArtUrl || "https://picsum.photos/seed/history/80",
+    license: "COPYRIGHTED",
+    youtubeVideoId: song.youtubeVideoId,
+  };
+}
+
 export default function Page() {
   const [result, setResult] = useState<SongRecognitionResult | null>(null);
+  const [imageResult, setImageResult] = useState<ImageRecognitionResult | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [pendingImageResult, setPendingImageResult] = useState<ImageRecognitionResult | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -118,11 +141,40 @@ export default function Page() {
     });
   }
 
+  function addSongsToHistoryTracks(songs: SongMatch[]) {
+    const nextTracks = songs.map(songMatchToTrack);
+    setHistoryTracks((prev) => [...nextTracks, ...prev].slice(0, 20));
+  }
+
+  function handleConfirmSongs(selectedSongs: SongMatch[]) {
+    if (!pendingImageResult) return;
+
+    const updatedResult: ImageRecognitionResult = {
+      ...pendingImageResult,
+      songs: selectedSongs,
+      count: selectedSongs.length,
+    };
+
+    setImageResult(updatedResult);
+    setResult(selectedSongs[0] ?? null);
+    addSongsToHistoryTracks(selectedSongs);
+    setShowReviewModal(false);
+    setPendingImageResult(null);
+  }
+
+  function handleCancelReview() {
+    setShowReviewModal(false);
+    setPendingImageResult(null);
+  }
+
   async function handleRecognizeAudio() {
     if (isLoadingAudio || isLoadingImage) return;
 
     setErrorMessage(null);
     setResult(null);
+    setImageResult(null);
+    setPendingImageResult(null);
+    setShowReviewModal(false);
     setIsLoadingAudio(true);
     setRecognitionPhase("recording");
 
@@ -155,17 +207,20 @@ export default function Page() {
 
     setErrorMessage(null);
     setResult(null);
+    setImageResult(null);
+    setPendingImageResult(null);
+    setShowReviewModal(false);
     setIsLoadingImage(true);
     setRecognitionPhase("recognizing");
 
     try {
       setRecognitionPhase("verifying");
-      const recognized = await recognizeFromImage(file);
-      const primaryMatch = recognized.songs[0];
-      if (!primaryMatch) {
+      const recognized = await recognizeFromImage(file, 10, "eng");
+      if (!recognized.songs[0]) {
         throw new RecognitionError("No songs detected in photo.");
       }
-      setResult(primaryMatch);
+      setPendingImageResult(recognized);
+      setShowReviewModal(true);
     } catch (error) {
       if (error instanceof RecognitionError && error.code === "NO_VERIFIED_RESULT") {
         setErrorMessage("Text was detected, but no verified YouTube match was found for it.");
@@ -260,7 +315,32 @@ export default function Page() {
               )}
             </div>
 
-            {result && (
+            {imageResult && (
+              <section className="mt-6 rounded-2xl border border-violet-300/25 bg-gradient-to-br from-violet-500/15 to-cyan-500/10 p-6">
+                <h2 className="text-xl font-semibold text-white">Confirmed Songs ({imageResult.count})</h2>
+                <div className="mt-4 space-y-3">
+                  {imageResult.songs.map((song, index) => (
+                    <div
+                      key={`${song.songName}-${song.artist}-${index}`}
+                      className="rounded-xl border border-white/10 p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <img src={song.albumArtUrl} alt="Album cover" className="h-16 w-16 rounded-lg object-cover" />
+                        <div className="flex-1">
+                          <p className="text-lg font-medium">{index + 1}. {song.songName}</p>
+                          <p className="opacity-80">{song.artist}</p>
+                          <p className="text-sm opacity-70">
+                            {song.album} • {song.genre} • {song.releaseYear}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {result && !imageResult && (
               <div className="mt-6 rounded-2xl border border-violet-300/25 bg-gradient-to-br from-violet-500/15 to-cyan-500/10 p-6">
                 <h2 className="mb-4 text-xl font-medium text-white">Recognition Result</h2>
                 <div className="space-y-2 text-white/90">
@@ -300,6 +380,14 @@ export default function Page() {
           {isLibraryOpen && <LibrarySidebar playlists={playlists} tracks={tracks} />}
         </div>
       </div>
+
+      {showReviewModal && pendingImageResult && (
+        <SongReviewModal
+          songs={pendingImageResult.songs}
+          onConfirm={handleConfirmSongs}
+          onCancel={handleCancelReview}
+        />
+      )}
     </main>
   );
 }
