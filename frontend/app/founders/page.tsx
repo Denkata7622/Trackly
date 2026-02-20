@@ -10,7 +10,7 @@ export default function FoundersPage() {
     <main className="mx-auto max-w-5xl px-6 py-16 text-white">
       <section className="text-center mb-16">
         <h1 className="mt-6 text-5xl font-semibold tracking-tight leading-tight">
-          {isBg ? "Основатели на Trackly" : "Trackly Founders"}
+          {isBg ? "Основатели на ПонотИИ" : "PonotAI Founders"}
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg text-white/65 leading-relaxed">
           {isBg
@@ -23,8 +23,8 @@ export default function FoundersPage() {
         <h2 className="mb-3 text-2xl font-semibold">{isBg ? "Кои сме ние" : "Who we are"}</h2>
         <p className="leading-relaxed text-white/75">
           {isBg
-            ? "Съчетаваме UX мислене, инженерна дисциплина и бърза итерация. Trackly е нашият общ проект, в който дизайнът и логиката работят като едно."
-            : "We combine UX thinking, engineering discipline, and fast iteration. Trackly is our shared project where design and logic work as one."}
+            ? "Съчетаваме UX мислене, инженерна дисциплина и бърза итерация. ПонотИИ е нашият общ проект, в който дизайнът и логиката работят като едно."
+            : "We combine UX thinking, engineering discipline, and fast iteration. PonotAI is our shared project where design and logic work as one."}
         </p>
       </section>
 

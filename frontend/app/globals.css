@@ -1,45 +1,58 @@
 @import "tailwindcss";
 
 
-:root {
-  /* Base */
+:root[data-theme="dark"], html[data-theme="dark"], body[data-theme="dark"] {
   --bg: #0b0d12;
   --bg-2: #07080c;
-
-  /* Surfaces (cards) */
   --surface: rgba(255, 255, 255, 0.05);
   --surface-2: rgba(255, 255, 255, 0.08);
-  --border: rgba(255, 255, 255, 0.10);
-
-  /* Text */
+  --border: rgba(255, 255, 255, 0.1);
   --text: rgba(255, 255, 255, 0.92);
   --muted: rgba(255, 255, 255, 0.62);
-
-  /* Accent (main) */
-  --accent: #7c5cff; 
-  --accent-2: #4cd3ff; 
-
-  /* Status */
+  --accent: #7c5cff;
+  --accent-2: #4cd3ff;
   --free: #2cff9a;
   --warning: #ffcc66;
-
-  --listen-glow: rgba(124,92,255,0.55);
-  --listen-glow-soft: rgba(124,92,255,0.18);
+  --listen-glow: rgba(124, 92, 255, 0.55);
+  --listen-glow-soft: rgba(124, 92, 255, 0.18);
   --listen-core: #7c5cff;
-
+  --sidebar-bg: rgba(10, 12, 18, 0.55);
+  --hover-bg: rgba(255, 255, 255, 0.06);
+  --active-bg: rgba(124, 92, 255, 0.18);
+  --input-bg: rgba(0, 0, 0, 0.2);
 }
 
+:root[data-theme="light"], html[data-theme="light"], body[data-theme="light"] {
+  --bg: #f5f7fa;
+  --bg-2: #e9eef7;
+  --surface: rgba(255, 255, 255, 0.8);
+  --surface-2: rgba(255, 255, 255, 0.92);
+  --border: rgba(0, 0, 0, 0.1);
+  --text: rgba(0, 0, 0, 0.87);
+  --muted: rgba(0, 0, 0, 0.62);
+  --accent: #6c4dff;
+  --accent-2: #00a8da;
+  --free: #12995f;
+  --warning: #b67900;
+  --listen-glow: rgba(108, 77, 255, 0.45);
+  --listen-glow-soft: rgba(108, 77, 255, 0.16);
+  --listen-core: #6c4dff;
+  --sidebar-bg: rgba(255, 255, 255, 0.68);
+  --hover-bg: rgba(0, 0, 0, 0.04);
+  --active-bg: rgba(108, 77, 255, 0.14);
+  --input-bg: rgba(255, 255, 255, 0.85);
+}
 
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  transition: background-color 220ms ease, color 220ms ease, border-color 220ms ease;
 }
 
 body {
-  background: transparent;
+  background:
+    radial-gradient(900px 500px at 50% 20%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%),
+    radial-gradient(700px 380px at 20% 80%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--bg), var(--bg-2));
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -50,7 +63,7 @@ body {
 .navItem {
   padding: 10px 12px;
   border-radius: 12px;
-  color: rgba(255,255,255,0.75);
+  color: var(--muted);
   transition: all 0.18s ease;
   border: 1px solid transparent;
   position: relative;
@@ -60,18 +73,18 @@ body {
 }
 
 .navItem:hover {
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.98);
-  border-color: rgba(255,255,255,0.12);
+  background: var(--hover-bg);
+  color: var(--text);
+  border-color: var(--border);
   transform: translateX(6px);
 }
 
 .navItemActive {
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(124,92,255,0.18);
-  border: 1px solid rgba(124,92,255,0.35);
-  color: white;
+  background: var(--active-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
   position: relative;
   display: flex;
   align-items: center;
@@ -95,7 +108,7 @@ body {
 
 .listenButton {
   background: radial-gradient(circle at 30% 30%, #b7a8ff, #7c5cff);
-  color: white;
+  color: var(--text);
   font-weight: 600;
   letter-spacing: 0.18em;
   font-size: 14px;
@@ -147,18 +160,18 @@ body {
 
 /* Presentation pages */
 .card {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.10);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.35);
 }
 
 .cardTitle {
-  color: rgba(255,255,255,0.92);
+  color: var(--text);
 }
 
 .cardText {
-  color: rgba(255,255,255,0.62);
+  color: var(--muted);
 }
 
 .badge {
@@ -169,7 +182,7 @@ body {
   border-radius: 999px;
   border: 1px solid rgba(124,92,255,0.28);
   background: rgba(124,92,255,0.16);
-  color: rgba(255,255,255,0.92);
+  color: var(--text);
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -370,7 +383,7 @@ body {
 }
 
 .resultCardPro {
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--border);
   background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.18));
   border-radius: 22px;
   padding: 18px;
@@ -397,7 +410,7 @@ body {
 .miniBtn {
   padding: 8px 12px;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--border);
   background: rgba(0,0,0,0.25);
   color: rgba(255,255,255,0.85);
   font-size: 12px;
@@ -406,15 +419,15 @@ body {
 
 .miniBtn:hover {
   background: rgba(255,255,255,0.08);
-  color: white;
+  color: var(--text);
 }
 
 .primaryBtn {
   padding: 10px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(124,92,255,0.35);
-  background: rgba(124,92,255,0.18);
-  color: white;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--active-bg);
+  color: var(--text);
   font-size: 12px;
   transition: 0.18s ease;
 }
@@ -426,8 +439,8 @@ body {
 .secondaryBtn {
   padding: 10px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  background: var(--hover-bg);
   color: rgba(255,255,255,0.85);
   font-size: 12px;
   transition: 0.18s ease;
@@ -435,7 +448,7 @@ body {
 
 .secondaryBtn:hover {
   background: rgba(255,255,255,0.12);
-  color: white;
+  color: var(--text);
 }
 
 .licensePill {
@@ -507,7 +520,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--text);
   transition: transform 0.25s ease;
   animation: heroPulse 2.2s infinite;
 }

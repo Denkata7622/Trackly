@@ -52,7 +52,7 @@ type YouTubeWindow = Window & {
   onYouTubeIframeAPIReady?: () => void;
 };
 
-const STORAGE_KEY = "trackly.player.state.v1";
+const STORAGE_KEY = "ponotai.player.state.v1";
 
 function loadInitialPlayerState() {
   if (typeof window === "undefined") {
@@ -113,7 +113,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const setupPlayer = () => {
       if (!ytWindow.YT || playerRef.current) return;
 
-      playerRef.current = new ytWindow.YT.Player("trackly-hidden-yt-player", {
+      playerRef.current = new ytWindow.YT.Player("ponotai-hidden-yt-player", {
         width: "1",
         height: "1",
         playerVars: {
@@ -287,7 +287,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   return (
     <PlayerContext.Provider value={contextValue}>
       {children}
-      <div id="trackly-hidden-yt-player" className="pointer-events-none fixed -left-[9999px] top-0 h-px w-px" aria-hidden />
+      <div id="ponotai-hidden-yt-player" className="pointer-events-none fixed -left-[9999px] top-0 h-px w-px" aria-hidden />
     </PlayerContext.Provider>
   );
 }
