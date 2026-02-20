@@ -62,6 +62,16 @@ export function useLibrary() {
     }));
   }
 
+  function removeSongFromPlaylist(songId: string, playlistId: string) {
+    setLibraryState((prev) => ({
+      ...prev,
+      playlists: prev.playlists.map((playlist) => {
+        if (playlist.id !== playlistId) return playlist;
+        return { ...playlist, songIds: playlist.songIds.filter((id) => id !== songId) };
+      }),
+    }));
+  }
+
   return {
     playlists: libraryState.playlists,
     favoritesSet,
@@ -69,5 +79,6 @@ export function useLibrary() {
     createPlaylist,
     deletePlaylist,
     addSongToPlaylist,
+    removeSongFromPlaylist,
   };
 }

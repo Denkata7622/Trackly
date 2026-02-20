@@ -21,6 +21,7 @@ import {
 import { recentTracksSeed } from "../features/tracks/seed";
 import type { Track } from "../features/tracks/types";
 import { useLanguage } from "../lib/LanguageContext";
+import { useTheme } from "../lib/ThemeContext";
 import { t } from "../lib/translations";
 
 type Toast = { id: string; kind: "success" | "error" | "info"; message: string };
@@ -28,8 +29,9 @@ type HistoryEntry = { id: string; source: "audio" | "ocr"; createdAt: string; so
 
 const IMAGE_MAX_MB = 10;
 const IMAGE_MIME_WHITELIST = ["image/png", "image/jpeg", "image/webp"];
-const HISTORY_KEY = "trackly-history";
-const THEME_KEY = "trackly-theme";
+const HISTORY_KEY = "ponotai-history";
+const MAX_SONGS_KEY = "ponotai.settings.maxSongs";
+const OCR_LANGUAGE_KEY = "ponotai.settings.ocrLanguage";
 
 function songMatchToRecognitionResult(match: SongMatch, source: "audio" | "image"): SongRecognitionResult {
   return { ...match, source };
@@ -57,7 +59,6 @@ export function HomeContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [maxSongs, setMaxSongs] = useState(10);
   const [ocrLanguage, setOcrLanguage] = useState("eng");
@@ -69,7 +70,8 @@ export function HomeContent() {
 
   const { addToQueue } = usePlayer();
   const { language, setLanguage } = useLanguage();
-  const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist } = useLibrary();
+  const { theme, toggleTheme } = useTheme();
+  const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist, removeSongFromPlaylist } = useLibrary();
 
   const latestResult: SongRecognitionResult | null = useMemo(() => {
     if (audioResult) return songMatchToRecognitionResult(audioResult.primaryMatch, "audio");
@@ -85,8 +87,6 @@ export function HomeContent() {
   }, [latestResult]);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem(THEME_KEY);
-    if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
     const savedHistory = localStorage.getItem(HISTORY_KEY);
     if (savedHistory) {
       try {
@@ -98,12 +98,23 @@ export function HomeContent() {
   }, []);
 
   useEffect(() => {
+    const storedMaxSongs = Number(localStorage.getItem(MAX_SONGS_KEY) ?? 10);
+    const storedOcrLanguage = localStorage.getItem(OCR_LANGUAGE_KEY) ?? "eng";
+    setMaxSongs(Math.min(20, Math.max(1, storedMaxSongs || 10)));
+    setOcrLanguage(storedOcrLanguage);
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 18)));
   }, [history]);
 
   useEffect(() => {
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+    localStorage.setItem(MAX_SONGS_KEY, String(maxSongs));
+  }, [maxSongs]);
+
+  useEffect(() => {
+    localStorage.setItem(OCR_LANGUAGE_KEY, ocrLanguage);
+  }, [ocrLanguage]);
 
   function pushToast(kind: Toast["kind"], message: string) {
     const id = crypto.randomUUID();
@@ -218,14 +229,16 @@ export function HomeContent() {
   }
 
   function playSong(song: SongMatch) {
-    addToQueue({ title: song.songName, artist: song.artist, query: `${song.songName} ${song.artist} official audio` });
+    addToQueue({
+      title: song.songName,
+      artist: song.artist,
+      query: `${song.songName} ${song.artist} official audio`,
+      videoId: song.youtubeVideoId ?? song.platformLinks.youtube,
+    });
   }
 
-  const pageStyle =
-    theme === "dark" ? { background: "rgba(9,10,16,0.2)", color: "#f1f3ff" } : { background: "rgba(244,247,255,0.9)", color: "#0d1321" };
-
   return (
-    <main className="min-h-screen" style={pageStyle}>
+    <main className="min-h-screen transition-colors">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8">
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
           <div className="space-y-6">
@@ -235,7 +248,7 @@ export function HomeContent() {
               onRecognize={handleRecognizeAudio}
               onOpenUpload={() => setIsUploadOpen(true)}
               onToggleLanguage={() => setLanguage(language === "en" ? "bg" : "en")}
-              onToggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              onToggleTheme={toggleTheme}
               onToggleLibrary={() => setIsLibraryOpen((prev) => !prev)}
               isLibraryOpen={isLibraryOpen}
               theme={theme}
@@ -280,7 +293,15 @@ export function HomeContent() {
                   onAddToPlaylist={addSongToPlaylist}
                   onCreatePlaylist={createPlaylist}
                   onDeletePlaylist={deletePlaylist}
-                  onPlay={(currentTrack) => addToQueue({ title: currentTrack.title, artist: currentTrack.artistName, query: `${currentTrack.title} ${currentTrack.artistName} official audio` })}
+                  onRemoveFromPlaylist={removeSongFromPlaylist}
+                  onPlay={(currentTrack) =>
+                    addToQueue({
+                      title: currentTrack.title,
+                      artist: currentTrack.artistName,
+                      query: `${currentTrack.title} ${currentTrack.artistName} official audio`,
+                      videoId: currentTrack.youtubeVideoId,
+                    })
+                  }
                 />
               ))}
             </section>

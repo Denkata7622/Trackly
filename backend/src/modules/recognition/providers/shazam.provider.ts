@@ -92,7 +92,7 @@ export async function recognizeWithShazam(buffer: Buffer, filename: string): Pro
     }
   }
 
-  const tempPath = path.join(os.tmpdir(), `trackly-shazam-${Date.now()}-${filename || "recording"}.webm`);
+  const tempPath = path.join(os.tmpdir(), `ponotai-shazam-${Date.now()}-${filename || "recording"}.webm`);
 
   await fs.writeFile(tempPath, buffer);
 

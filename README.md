@@ -1,4 +1,4 @@
-# Trackly
+# PonotAI
 
 Modern web application for music recognition and legal access to tracks and artists.
 

@@ -42,9 +42,9 @@ export default function BottomPlayBar() {
       <div className="mx-auto flex max-w-7xl flex-col gap-3">
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white">{currentTrack?.title ?? (isBg ? "Няма избрана песен" : "No song selected")}</p>
+            <p className="truncate text-sm font-semibold text-white" suppressHydrationWarning>{currentTrack?.title ?? (isBg ? "Няма избрана песен" : "No song selected")}</p>
             <div className="flex items-center gap-2 text-xs text-white/65">
-              <span className="truncate">{currentTrack?.artist ?? (isBg ? "Избери песен за стартиране" : "Pick a track to start playback")}</span>
+              <span className="truncate" suppressHydrationWarning>{currentTrack?.artist ?? (isBg ? "Избери песен за стартиране" : "Pick a track to start playback")}</span>
               <span aria-hidden>•</span>
               <span className="inline-flex items-center gap-1 rounded-full border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[11px] text-red-200">
                 ▶ YouTube

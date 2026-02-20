@@ -35,7 +35,7 @@ export default function HeroSection({
           <button className="glassBtn" onClick={onToggleTheme}>{theme === "dark" ? t("theme_light", language) : t("theme_dark", language)}</button>
         </div>
 
-        <p className="text-center text-sm uppercase tracking-[0.28em] text-white/60">Trackly</p>
+        <p className="text-center text-sm uppercase tracking-[0.28em] text-white/60">{language === "bg" ? "ПонотИИ" : "PonotAI"}</p>
         <h1 className="mt-3 text-center text-4xl font-bold sm:text-5xl">{t("hero_tagline", language)}</h1>
 
         <div className="mt-10 flex flex-col items-center gap-5">
