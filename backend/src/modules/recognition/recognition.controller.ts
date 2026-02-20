@@ -56,13 +56,21 @@ export async function recognizeImageController(req: Request, res: Response): Pro
     // maxSongs is accepted for backwards compatibility but not used by the deterministic OCR pipeline.
     void req.body?.maxSongs;
 
-    const metadata = await recognizeSongFromImage(req.file.buffer, language);
-    await addHistoryEntry({
-      songName: metadata.songName,
-      artist: metadata.artist,
-      youtubeVideoId: metadata.youtubeVideoId,
+    const songs = await recognizeSongFromImage(req.file.buffer, language);
+
+    for (const song of songs) {
+      await addHistoryEntry({
+        songName: song.songName,
+        artist: song.artist,
+        youtubeVideoId: song.youtubeVideoId,
+      });
+    }
+
+    res.status(200).json({
+      songs,
+      count: songs.length,
+      language: language ?? "eng",
     });
-    res.status(200).json(metadata);
   } catch (error) {
     handleRecognitionError(res, error, "Image recognition failed.");
   }

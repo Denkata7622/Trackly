@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import LibrarySidebar from "./LibrarySidebar";
 import TrackCard from "./TrackCard";
+import SongReviewModal from "./SongReviewModal";
 import { usePlayer } from "./PlayerProvider";
 import { useLibrary } from "../features/library/useLibrary";
 import {
@@ -61,6 +62,8 @@ export function HomeContent() {
   // Recognition results
   const [audioResult, setAudioResult] = useState<AudioRecognitionResult | null>(null);
   const [imageResult, setImageResult] = useState<ImageRecognitionResult | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [pendingImageResult, setPendingImageResult] = useState<ImageRecognitionResult | null>(null);
 
   // OCR settings
   const [maxSongs, setMaxSongs] = useState(10);
@@ -223,21 +226,25 @@ export function HomeContent() {
     setGlobalError(null);
     setAudioResult(null);
     setImageResult(null);
+    setShowReviewModal(false);
+    setPendingImageResult(null);
     setIsLoadingImage(true);
     setProgressVisible(true);
 
     try {
       if (imageCache.current.has(cacheKey)) {
-        setImageResult(imageCache.current.get(cacheKey)!);
+        const cachedResult = imageCache.current.get(cacheKey)!;
+        setPendingImageResult(cachedResult);
+        setShowReviewModal(true);
         pushToast("info", "Loaded OCR results from cache");
         return;
       }
 
       const recognized = await recognizeFromImage(file, maxSongs, ocrLanguage);
       imageCache.current.set(cacheKey, recognized);
-      setImageResult(recognized);
-      addToHistory("ocr", recognized.songs);
-      pushToast("success", `OCR completed: ${recognized.count} song(s) found`);
+      setPendingImageResult(recognized);
+      setShowReviewModal(true);
+      pushToast("info", `Found ${recognized.count} song(s). Review and confirm.`);
     } catch (error) {
       const message = (error as Error).message || "Could not recognize from photo.";
       setErrorMessage(message);
@@ -276,6 +283,28 @@ export function HomeContent() {
   function saveSong(song: SongMatch) {
     addToHistory("audio", [song]);
     pushToast("success", `${song.songName} saved to history`);
+  }
+
+
+  function handleConfirmSongs(selectedSongs: SongMatch[]) {
+    if (!pendingImageResult) return;
+
+    const updatedResult = {
+      ...pendingImageResult,
+      songs: selectedSongs,
+      count: selectedSongs.length,
+    };
+
+    setImageResult(updatedResult);
+    addToHistory("ocr", selectedSongs);
+    setShowReviewModal(false);
+    setPendingImageResult(null);
+    pushToast("success", `Added ${selectedSongs.length} song(s)`);
+  }
+
+  function handleCancelReview() {
+    setShowReviewModal(false);
+    setPendingImageResult(null);
   }
 
   // ─── Filtered history ──────────────────────────────────────────────────────
@@ -498,8 +527,9 @@ export function HomeContent() {
             {imageResult && (
               <section className="mt-8 rounded-2xl border border-white/15 p-6">
                 <h2 className="text-xl font-semibold">
-                  OCR Results ({imageResult.count}) • language: {imageResult.language}
+                  Confirmed Songs ({imageResult.count})
                 </h2>
+                <p className="mt-1 text-sm opacity-75">language: {imageResult.language}</p>
                 <div className="mt-4 space-y-3">
                   {imageResult.songs.map((song, index) => (
                     <div
@@ -526,6 +556,11 @@ export function HomeContent() {
                             >
                               ▶ Play
                             </button>
+                            {song.platformLinks.spotify && (
+                              <a className="miniBtn text-xs" href={song.platformLinks.spotify} target="_blank" rel="noreferrer">
+                                Spotify
+                              </a>
+                            )}
                             <button className="secondaryBtn text-xs" onClick={() => saveSong(song)}>
                               Save
                             </button>
@@ -649,6 +684,14 @@ export function HomeContent() {
           </div>
         ))}
       </div>
+
+      {showReviewModal && pendingImageResult && (
+        <SongReviewModal
+          songs={pendingImageResult.songs}
+          onConfirm={handleConfirmSongs}
+          onCancel={handleCancelReview}
+        />
+      )}
     </main>
   );
 }
