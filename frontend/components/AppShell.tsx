@@ -5,19 +5,21 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import BottomPlayBar from "./BottomPlayBar";
 import { PlayerProvider } from "./PlayerProvider";
+import { useLanguage } from "../lib/LanguageContext";
+import { t } from "../lib/translations";
 
 const NAV_ITEMS = [
-  { href: "/", label: "🎧 App" },
-  { href: "/idea", label: "💡 Idea" },
-  { href: "/how-to-use", label: "📘 How to use" },
-  { href: "/founders", label: "👥 Founders" },
-  { href: "/concept", label: "🧠 Concept" },
-  { href: "/the-future", label: "💡 The Future" },
-];
-
+  { href: "/", key: "nav_app", icon: "🎧" },
+  { href: "/idea", key: "nav_idea", icon: "💡" },
+  { href: "/how-to-use", key: "nav_how_to_use", icon: "📘" },
+  { href: "/founders", key: "nav_founders", icon: "👥" },
+  { href: "/concept", key: "nav_concept", icon: "🧠" },
+  { href: "/the-future", key: "nav_the_future", icon: "💡" },
+] as const;
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { language } = useLanguage();
 
   return (
     <PlayerProvider>
@@ -43,7 +45,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 className={pathname === item.href ? "navItemActive" : "navItem"}
                 href={item.href}
               >
-                {item.label}
+                {item.icon} {t(item.key, language)}
               </Link>
             ))}
           </nav>

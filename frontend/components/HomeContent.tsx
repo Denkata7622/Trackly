@@ -16,6 +16,8 @@ import {
 } from "../features/recognition/api";
 import { recentTracksSeed } from "../features/tracks/seed";
 import type { Track } from "../features/tracks/types";
+import { useLanguage } from "../lib/LanguageContext";
+import { t } from "../lib/translations";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -96,6 +98,7 @@ export function HomeContent() {
 
   // Hooks
   const { addToQueue } = usePlayer();
+  const { language, setLanguage } = useLanguage();
   const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist } =
     useLibrary();
 
@@ -190,14 +193,14 @@ export function HomeContent() {
       const recognized = await recognizeFromAudio(audioBlob);
       setAudioResult(recognized);
       addToHistory("audio", [recognized.primaryMatch]);
-      pushToast("success", `Recognized: ${recognized.primaryMatch.songName}`);
+      pushToast("success", t("toast_recognized", language, { song: recognized.primaryMatch.songName }));
     } catch (error) {
-      const message = (error as Error).message || "Could not recognize from audio.";
+      const message = (error as Error).message || t("toast_audio_failed", language);
       setErrorMessage(message);
       if (message.toLowerCase().includes("failed") || message.toLowerCase().includes("network")) {
-        setGlobalError("API unavailable. Please check backend connection.");
+        setGlobalError(t("toast_audio_failed", language));
       }
-      pushToast("error", "Audio recognition failed");
+      pushToast("error", t("toast_audio_failed", language));
     } finally {
       setIsRecording(false);
       setIsLoadingAudio(false);
@@ -208,8 +211,8 @@ export function HomeContent() {
   // ─── Image / OCR ───────────────────────────────────────────────────────────
 
   function validateImage(file: File): string | null {
-    if (!IMAGE_MIME_WHITELIST.includes(file.type)) return "Unsupported file type. Use PNG, JPG, or WEBP.";
-    if (file.size > IMAGE_MAX_MB * 1024 * 1024) return `File too large. Max ${IMAGE_MAX_MB}MB.`;
+    if (!IMAGE_MIME_WHITELIST.includes(file.type)) return t("toast_unsupported_type", language);
+    if (file.size > IMAGE_MAX_MB * 1024 * 1024) return t("toast_file_too_large", language, { max: IMAGE_MAX_MB });
     return null;
   }
 
@@ -236,7 +239,7 @@ export function HomeContent() {
         const cachedResult = imageCache.current.get(cacheKey)!;
         setPendingImageResult(cachedResult);
         setShowReviewModal(true);
-        pushToast("info", "Loaded OCR results from cache");
+        pushToast("info", t("toast_ocr_complete", language, { count: cachedResult.count }));
         return;
       }
 
@@ -244,14 +247,14 @@ export function HomeContent() {
       imageCache.current.set(cacheKey, recognized);
       setPendingImageResult(recognized);
       setShowReviewModal(true);
-      pushToast("info", `Found ${recognized.count} song(s). Review and confirm.`);
+      pushToast("info", t("toast_found_review", language, { count: recognized.count }));
     } catch (error) {
-      const message = (error as Error).message || "Could not recognize from photo.";
+      const message = (error as Error).message || t("error_recognition_failed", language);
       setErrorMessage(message);
       if (message.toLowerCase().includes("failed") || message.toLowerCase().includes("network")) {
-        setGlobalError("Backend offline or unreachable for OCR.");
+        setGlobalError(t("toast_image_failed", language));
       }
-      pushToast("error", "Image OCR failed");
+      pushToast("error", t("toast_image_failed", language));
     } finally {
       setIsLoadingImage(false);
       setProgressVisible(false);
@@ -282,7 +285,7 @@ export function HomeContent() {
 
   function saveSong(song: SongMatch) {
     addToHistory("audio", [song]);
-    pushToast("success", `${song.songName} saved to history`);
+    pushToast("success", t("toast_saved", language, { song: song.songName }));
   }
 
 
@@ -299,7 +302,7 @@ export function HomeContent() {
     addToHistory("ocr", selectedSongs);
     setShowReviewModal(false);
     setPendingImageResult(null);
-    pushToast("success", `Added ${selectedSongs.length} song(s)`);
+    pushToast("success", t("toast_added", language, { count: selectedSongs.length }));
   }
 
   function handleCancelReview() {
@@ -350,12 +353,12 @@ export function HomeContent() {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/55 backdrop-blur-sm">
           <div className="rounded-2xl border border-red-400/40 bg-black/60 px-10 py-8 text-center">
             <div className="mx-auto mb-3 h-8 w-8 animate-ping rounded-full bg-red-500" />
-            <p className="text-lg">Listening…</p>
+            <p className="text-lg">{t("listening", language)}</p>
             <button
               onClick={() => setIsRecording(false)}
               className="mt-4 rounded-lg border border-white/25 px-4 py-2"
             >
-              Stop
+              {t("stop", language)}
             </button>
           </div>
         </div>
@@ -364,20 +367,28 @@ export function HomeContent() {
       <div className="mx-auto max-w-6xl px-6 py-10">
         {/* Header */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-4xl font-semibold">Trackly Recognition</h1>
+          <h1 className="text-4xl font-semibold">{t("app_title", language)}</h1>
           <div className="flex items-center gap-2">
             <button
               type="button"
               className="rounded border border-white/20 px-3 py-2 text-sm hover:bg-white/10"
               onClick={() => setIsLibraryOpen((prev) => !prev)}
             >
-              {isLibraryOpen ? "Hide Library" : "Show Library"}
+              {isLibraryOpen ? t("hide_library", language) : t("show_library", language)}
+            </button>
+            <button
+              onClick={() =>
+                setLanguage(language === "en" ? "bg" : "en")
+              }
+              className="rounded-lg border border-white/20 px-3 py-2 text-sm"
+            >
+              {language === "en" ? "🇧🇬 БГ" : "🇬🇧 EN"}
             </button>
             <button
               onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
               className="rounded-lg border border-white/20 px-3 py-2 text-sm"
             >
-              {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+              {theme === "dark" ? t("theme_light", language) : t("theme_dark", language)}
             </button>
           </div>
         </div>
@@ -385,7 +396,7 @@ export function HomeContent() {
         {/* OCR settings row */}
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-white/15 p-4">
-            <label htmlFor="maxSongsInput" className="mb-2 block text-sm">Max OCR songs</label>
+            <label htmlFor="maxSongsInput" className="mb-2 block text-sm">{t("stats_max_ocr_songs", language)}</label>
             <input
               id="maxSongsInput"
               type="number"
@@ -397,7 +408,7 @@ export function HomeContent() {
             />
           </div>
           <div className="rounded-xl border border-white/15 p-4">
-            <label htmlFor="ocrLanguage" className="mb-2 block text-sm">OCR language</label>
+            <label htmlFor="ocrLanguage" className="mb-2 block text-sm">{t("stats_ocr_language", language)}</label>
             <select
               id="ocrLanguage"
               value={ocrLanguage}
@@ -413,7 +424,7 @@ export function HomeContent() {
             </select>
           </div>
           <div className="rounded-xl border border-white/15 p-4 text-sm opacity-80">
-            <strong>Flow:</strong> record / upload → processing → result card → save to library
+            <strong>{t("stats_flow", language)}</strong>
           </div>
         </div>
 
@@ -427,7 +438,7 @@ export function HomeContent() {
                 disabled={isLoading}
                 className="primaryBtn disabled:opacity-50"
               >
-                {isLoadingAudio ? "Recognizing..." : "Recognize with microphone"}
+                {isLoadingAudio ? `${t("btn_recognize_audio", language)}...` : t("btn_recognize_audio", language)}
               </button>
               <button
                 id="uploadPhotoBtn"
@@ -435,14 +446,14 @@ export function HomeContent() {
                 disabled={isLoading}
                 className="secondaryBtn disabled:opacity-50"
               >
-                {isLoadingImage ? "Uploading photo..." : "Upload photo (OCR)"}
+                {isLoadingImage ? `${t("btn_upload_photo", language)}...` : t("btn_upload_photo", language)}
               </button>
               <button
                 onClick={handleRecognizeAudio}
                 disabled={isLoading}
                 className="secondaryBtn disabled:opacity-50"
               >
-                Retry with noise filtering
+                {t("btn_retry_filtering", language)}
               </button>
             </div>
 
@@ -456,8 +467,8 @@ export function HomeContent() {
                 isDragOver ? "border-violet-400 bg-violet-500/10" : "border-white/25"
               }`}
             >
-              <p className="text-lg">Drop image or click to upload</p>
-              <p className="mt-2 text-sm opacity-70">PNG, JPG, WEBP up to {IMAGE_MAX_MB}MB</p>
+              <p className="text-lg">{t("drag_drop_text", language)}</p>
+              <p className="mt-2 text-sm opacity-70">{t("drag_drop_hint", language, { max: IMAGE_MAX_MB })}</p>
             </div>
 
             <input
@@ -483,14 +494,14 @@ export function HomeContent() {
                     <h2 className="text-2xl font-semibold">{audioResult.primaryMatch.songName}</h2>
                     <p className="text-lg opacity-85">{audioResult.primaryMatch.artist}</p>
                     <p className="mt-2 text-sm opacity-80">
-                      Confidence {Math.round(audioResult.primaryMatch.confidence * 100)}% •{" "}
+                      {t("confidence", language)} {Math.round(audioResult.primaryMatch.confidence * 100)}% •{" "}
                       {audioResult.primaryMatch.genre} • {audioResult.primaryMatch.releaseYear} •{" "}
                       {audioResult.primaryMatch.durationSec}s
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.spotify} target="_blank" rel="noreferrer">🎵 Spotify</a>
-                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.appleMusic} target="_blank" rel="noreferrer">🍎 Apple Music</a>
-                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.youtubeMusic} target="_blank" rel="noreferrer">▶ YouTube Music</a>
+                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.spotify} target="_blank" rel="noreferrer">🎵 {t("btn_spotify", language)}</a>
+                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.appleMusic} target="_blank" rel="noreferrer">🍎 {t("btn_apple_music", language)}</a>
+                      <a className="miniBtn" href={audioResult.primaryMatch.platformLinks.youtubeMusic} target="_blank" rel="noreferrer">▶ {t("btn_youtube_music", language)}</a>
                       <button
                         className="primaryBtn"
                         onClick={() => addToQueue({
@@ -499,10 +510,10 @@ export function HomeContent() {
                           query: `${audioResult.primaryMatch.songName} ${audioResult.primaryMatch.artist} official audio`,
                         })}
                       >
-                        ▶ Play in player
+                        ▶ {t("btn_play_in_player", language)}
                       </button>
                       <button className="secondaryBtn" onClick={() => saveSong(audioResult.primaryMatch)}>
-                        Save
+                        {t("btn_save", language)}
                       </button>
                     </div>
                   </div>
@@ -510,7 +521,7 @@ export function HomeContent() {
 
                 {audioResult.alternatives.length > 0 && (
                   <>
-                    <h3 className="mt-5 text-sm uppercase tracking-wide opacity-70">Alternative matches</h3>
+                    <h3 className="mt-5 text-sm uppercase tracking-wide opacity-70">{t("alternative_matches", language)}</h3>
                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
                       {audioResult.alternatives.map((song) => (
                         <div key={song.songName} className="rounded-xl border border-white/10 p-3 text-sm">
@@ -526,9 +537,7 @@ export function HomeContent() {
             {/* Image / OCR result card */}
             {imageResult && (
               <section className="mt-8 rounded-2xl border border-white/15 p-6">
-                <h2 className="text-xl font-semibold">
-                  Confirmed Songs ({imageResult.count})
-                </h2>
+                <h2 className="text-xl font-semibold">{t("confirmed_songs", language)} ({imageResult.count})</h2>
                 <p className="mt-1 text-sm opacity-75">language: {imageResult.language}</p>
                 <div className="mt-4 space-y-3">
                   {imageResult.songs.map((song, index) => (
@@ -575,7 +584,7 @@ export function HomeContent() {
 
             {/* Songs / TrackCards */}
             <div className="mt-8 space-y-3">
-              <h2 className="text-xl font-semibold">Songs</h2>
+              <h2 className="text-xl font-semibold">{t("songs_heading", language)}</h2>
               {tracks.map((track) => (
                 <TrackCard
                   key={track.id}
@@ -600,11 +609,11 @@ export function HomeContent() {
             {/* History */}
             <section className="mt-10 rounded-2xl border border-white/15 p-6">
               <div className="mb-4 flex flex-wrap items-center gap-3">
-                <h2 className="text-xl font-semibold">History</h2>
+                <h2 className="text-xl font-semibold">{t("history_title", language)}</h2>
                 <input
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
-                  placeholder="Search by artist or song"
+                  placeholder={t("history_search_placeholder", language)}
                   className="rounded-lg border border-white/20 bg-transparent px-3 py-2 text-sm"
                 />
                 <label className="text-sm">
@@ -614,20 +623,20 @@ export function HomeContent() {
                     onChange={(e) => setOnlyToday(e.target.checked)}
                     className="mr-2"
                   />
-                  Today only
+                  {t("history_today_only", language)}
                 </label>
                 <button
                   onClick={() => setHistory([])}
                   className="rounded-lg border border-red-400/40 px-3 py-2 text-sm text-red-300"
                 >
-                  Clear
+                  {t("history_clear", language)}
                 </button>
               </div>
 
               {filteredHistory.length === 0 ? (
                 <div className="rounded-xl border border-white/10 p-8 text-center opacity-70">
-                  <p className="text-lg">No songs recognized yet</p>
-                  <p className="text-sm">Start recognizing to build your history.</p>
+                  <p className="text-lg">{t("history_empty", language)}</p>
+                  <p className="text-sm">{t("history_empty_hint", language)}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -643,7 +652,7 @@ export function HomeContent() {
                           onClick={() => setHistory((prev) => prev.filter((item) => item.id !== entry.id))}
                           className="text-red-300"
                         >
-                          Delete
+                          {t("history_delete", language)}
                         </button>
                       </div>
                     </div>
