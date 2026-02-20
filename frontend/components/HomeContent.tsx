@@ -29,7 +29,9 @@ type HistoryEntry = { id: string; source: "audio" | "ocr"; createdAt: string; so
 
 const IMAGE_MAX_MB = 10;
 const IMAGE_MIME_WHITELIST = ["image/png", "image/jpeg", "image/webp"];
-const HISTORY_KEY = "trackly-history";
+const HISTORY_KEY = "ponotai-history";
+const MAX_SONGS_KEY = "ponotai.settings.maxSongs";
+const OCR_LANGUAGE_KEY = "ponotai.settings.ocrLanguage";
 
 function songMatchToRecognitionResult(match: SongMatch, source: "audio" | "image"): SongRecognitionResult {
   return { ...match, source };
@@ -96,8 +98,23 @@ export function HomeContent() {
   }, []);
 
   useEffect(() => {
+    const storedMaxSongs = Number(localStorage.getItem(MAX_SONGS_KEY) ?? 10);
+    const storedOcrLanguage = localStorage.getItem(OCR_LANGUAGE_KEY) ?? "eng";
+    setMaxSongs(Math.min(20, Math.max(1, storedMaxSongs || 10)));
+    setOcrLanguage(storedOcrLanguage);
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 18)));
   }, [history]);
+
+  useEffect(() => {
+    localStorage.setItem(MAX_SONGS_KEY, String(maxSongs));
+  }, [maxSongs]);
+
+  useEffect(() => {
+    localStorage.setItem(OCR_LANGUAGE_KEY, ocrLanguage);
+  }, [ocrLanguage]);
 
   function pushToast(kind: Toast["kind"], message: string) {
     const id = crypto.randomUUID();

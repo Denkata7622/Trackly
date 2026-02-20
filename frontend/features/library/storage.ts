@@ -1,7 +1,7 @@
 import type { LibraryState, Playlist } from "./types";
 
-const FAVORITES_KEY = "trackly.library.favorites";
-const PLAYLISTS_KEY = "trackly.library.playlists";
+const FAVORITES_KEY = "ponotai.library.favorites";
+const PLAYLISTS_KEY = "ponotai.library.playlists";
 
 const initialState: LibraryState = {
   favorites: [],

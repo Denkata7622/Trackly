@@ -43,9 +43,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     function syncSidebarData() {
       try {
-        const historyRaw = window.localStorage.getItem("trackly-history");
-        const libraryRaw = window.localStorage.getItem("trackly.library.playlists");
-        const favoritesRaw = window.localStorage.getItem("trackly.library.favorites");
+        const historyRaw = window.localStorage.getItem("ponotai-history");
+        const libraryRaw = window.localStorage.getItem("ponotai.library.playlists");
+        const favoritesRaw = window.localStorage.getItem("ponotai.library.favorites");
         const history = historyRaw ? (JSON.parse(historyRaw) as HistoryItem[]) : [];
         const playlists = libraryRaw ? (JSON.parse(libraryRaw) as Playlist[]) : [];
         const favorites = favoritesRaw ? (JSON.parse(favoritesRaw) as string[]) : [];
@@ -78,7 +78,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <Link href="/" className="block select-none">
               <h1 className="logoWrapper flex items-center gap-2">
                 <span className="logoDot"></span>
-                {!isCollapsed && <span className="logoText">Trackly</span>}
+                {!isCollapsed && <span className="logoText">PonotAI</span>}
               </h1>
             </Link>
             <button className="navItem !p-2" onClick={() => setIsCollapsed((prev) => !prev)}>{isCollapsed ? "»" : "«"}</button>

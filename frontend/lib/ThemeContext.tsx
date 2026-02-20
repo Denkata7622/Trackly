@@ -10,7 +10,7 @@ type ThemeContextValue = {
   toggleTheme: () => void;
 };
 
-const THEME_KEY = "trackly-theme";
+const THEME_KEY = "ponotai-theme";
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
@@ -24,6 +24,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    document.body.setAttribute("data-theme", theme);
+    document.documentElement.style.colorScheme = theme;
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 

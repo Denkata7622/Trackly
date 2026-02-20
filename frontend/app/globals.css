@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 
-[data-theme="dark"] {
+:root[data-theme="dark"], html[data-theme="dark"], body[data-theme="dark"] {
   --bg: #0b0d12;
   --bg-2: #07080c;
   --surface: rgba(255, 255, 255, 0.05);
@@ -22,7 +22,7 @@
   --input-bg: rgba(0, 0, 0, 0.2);
 }
 
-[data-theme="light"] {
+:root[data-theme="light"], html[data-theme="light"], body[data-theme="light"] {
   --bg: #f5f7fa;
   --bg-2: #e9eef7;
   --surface: rgba(255, 255, 255, 0.8);

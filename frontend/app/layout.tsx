@@ -6,7 +6,7 @@ import { ThemeProvider } from "../lib/ThemeContext";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="bg">
+    <html lang="bg" data-theme="dark" suppressHydrationWarning>
       <body className="text-[var(--text)]">
         <ThemeProvider>
           <LanguageProvider>

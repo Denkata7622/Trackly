@@ -30,7 +30,7 @@ const LOCAL_FALLBACKS: RecognizeResponse[] = [
     title: "Morning Sun",
     artist: { id: "a2", name: "Luna Waves" },
     license: "FREE",
-    artworkUrl: "https://picsum.photos/seed/trackly-api-fallback/600",
+    artworkUrl: "https://picsum.photos/seed/ponotai-api-fallback/600",
   },
 ];
 
@@ -58,7 +58,7 @@ export async function POST() {
   return NextResponse.json(sample, {
     status: 200,
     headers: {
-      "x-trackly-fallback": "true",
+      "x-ponotai-fallback": "true",
     },
   });
 }
