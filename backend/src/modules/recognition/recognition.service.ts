@@ -1,4 +1,5 @@
 import Tesseract from "tesseract.js";
+import { parseBuffer } from "music-metadata";
 import { interpretOcr, type InterpretedLine, type OcrBlock } from "./ocrInterpreter";
 import {
   lookupSongByTitleAndArtist,
@@ -6,6 +7,8 @@ import {
   recognizeAudioWithAudd,
   type ProviderSongMetadata,
 } from "./providers/audd.provider";
+import { recognizeWithAcrCloud } from "./providers/acrcloud.provider";
+import { recognizeWithShazam } from "./providers/shazam.provider";
 
 export type SongMetadata = ProviderSongMetadata & {
   source: "provider" | "ocr_fallback";
@@ -39,6 +42,79 @@ const UNKNOWN_METADATA: OcrCandidateMetadata = {
 
 const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 &-_'\"():,./+!?[]";
+
+
+const MIN_PROVIDER_CONFIDENCE = 0.7;
+
+async function ensureYoutubeLink(metadata: ProviderSongMetadata): Promise<ProviderSongMetadata> {
+  if (metadata.youtubeVideoId) {
+    return metadata;
+  }
+
+  const lookedUp = await lookupSongByTitleAndArtist(metadata.songName, metadata.artist);
+  if (!lookedUp?.youtubeVideoId) {
+    return metadata;
+  }
+
+  return {
+    ...metadata,
+    youtubeVideoId: lookedUp.youtubeVideoId,
+    platformLinks: {
+      ...metadata.platformLinks,
+      youtube: lookedUp.platformLinks.youtube,
+    },
+  };
+}
+
+async function extractMetadataFromLocalTags(buffer: Buffer): Promise<ProviderSongMetadata | null> {
+  try {
+    const parsed = await parseBuffer(buffer, { mimeType: "audio/webm" }, { duration: false });
+    const title = parsed.common.title?.trim();
+    const artist = parsed.common.artist?.trim();
+
+    if (!title || !artist) {
+      return null;
+    }
+
+    return {
+      songName: title,
+      artist,
+      album: parsed.common.album?.trim() || "Unknown Album",
+      genre: parsed.common.genre?.[0] || "Unknown Genre",
+      releaseYear: typeof parsed.common.year === "number" ? parsed.common.year : null,
+      confidenceScore: 0.55,
+      youtubeVideoId: undefined,
+      platformLinks: {},
+    };
+  } catch {
+    return null;
+  }
+}
+
+const VISION_SYSTEM_PROMPT = `You are analyzing a music screenshot (Spotify playlist, Apple Music library, YouTube Music queue, now playing screen, etc.).
+
+Extract ALL songs visible in the image. This could be:
+- A single now-playing song
+- A playlist with multiple songs
+- A queue or album tracklist
+- Search results
+
+For EACH song you see, extract the complete song title and complete artist name.
+
+CRITICAL RULES:
+1. Capture ENTIRE multi-word names (e.g., "Mason Jar Moonshine", not "Jar")
+2. Extract every song visible, not just the first one
+3. DO NOT extract UI elements (Play, Pause, timestamps, durations, track numbers)
+4. DO NOT extract playlist names or album titles as songs
+
+Respond with ONLY a JSON array, no other text:
+[
+  {"songName":"complete title","artist":"complete artist","album":""},
+  {"songName":"complete title","artist":"complete artist","album":""},
+  ...
+]
+
+If no songs are visible, respond with an empty array: []`;
 
 function scoreLineForTitle(line: InterpretedLine): number {
   return (
@@ -96,6 +172,7 @@ function toFallbackResponse(metadata: OcrCandidateMetadata): SongMetadata {
     platformLinks: {},
     youtubeVideoId: undefined,
     releaseYear: null,
+    confidenceScore: metadata.confidenceScore,
     source: "ocr_fallback",
     verificationStatus: "not_found",
   };
@@ -129,6 +206,100 @@ function toOcrBlocks(words: TesseractWord[]): OcrBlock[] {
   }
 
   return blocks;
+}
+
+function parseVisionArrayResponse(text: string): OcrCandidateMetadata[] {
+  const cleaned = text.trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new NoVerifiedResultError("Could not parse vision response.");
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new NoVerifiedResultError("Vision did not return an array of songs.");
+  }
+
+  return parsed
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    .filter((item) => typeof item["songName"] === "string" && typeof item["artist"] === "string")
+    .map((item) => {
+      const songName = (item["songName"] as string).trim();
+      const artist = (item["artist"] as string).trim();
+      const album = typeof item["album"] === "string"
+        ? (item["album"] as string).trim() || UNKNOWN_METADATA.album
+        : UNKNOWN_METADATA.album;
+
+      return {
+        songName,
+        artist,
+        album,
+        confidenceScore: 0.75,
+      };
+    })
+    .filter((item) => item.songName.length > 0 && item.artist.length > 0);
+}
+
+async function extractMetadataWithHuggingFaceVision(buffer: Buffer): Promise<OcrCandidateMetadata[]> {
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) {
+    throw new NoVerifiedResultError("Hugging Face vision is not configured.");
+  }
+
+  const modelUrl = process.env.HUGGINGFACE_VISION_URL ?? "https://router.huggingface.co/v1/chat/completions";
+  const response = await fetch(modelUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.HUGGINGFACE_VISION_MODEL ?? "Qwen/Qwen2.5-VL-7B-Instruct",
+      messages: [
+        { role: "system", content: VISION_SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Extract all visible songs from this screenshot.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/png;base64,${buffer.toString("base64")}`,
+              },
+            },
+          ],
+        },
+      ],
+      temperature: 0,
+      max_tokens: 700,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new NoVerifiedResultError(`Vision extraction failed with status ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new NoVerifiedResultError("Vision extraction returned an empty response.");
+  }
+
+  const extracted = parseVisionArrayResponse(content);
+  console.log("[recognition] Vision extracted JSON array:", extracted);
+
+  return extracted;
 }
 
 async function extractMetadataWithOcr(buffer: Buffer, language = "eng"): Promise<OcrCandidateMetadata> {
@@ -165,26 +336,93 @@ async function extractMetadataWithOcr(buffer: Buffer, language = "eng"): Promise
 }
 
 export async function recognizeSongFromAudio(buffer: Buffer, originalName: string): Promise<SongMetadata> {
-  const providerResult = await recognizeAudioWithAudd(buffer, originalName);
+  const providers: Array<{
+    name: string;
+    run: () => Promise<ProviderSongMetadata | null>;
+  }> = [
+    {
+      name: "AuDD",
+      run: () => recognizeAudioWithAudd(buffer, originalName),
+    },
+    {
+      name: "ACRCloud",
+      run: () => recognizeWithAcrCloud(buffer, originalName),
+    },
+    {
+      name: "Shazam",
+      run: () => recognizeWithShazam(buffer, originalName),
+    },
+  ];
 
-  if (providerResult?.youtubeVideoId) {
-    return toProviderResponse(providerResult);
+  for (const provider of providers) {
+    console.log(`[recognition] Trying ${provider.name}...`);
+
+    try {
+      const candidate = await provider.run();
+      if (!candidate) {
+        console.log(`[recognition] ${provider.name} failed: no match`);
+        continue;
+      }
+
+      const confidence = candidate.confidenceScore ?? 0;
+      if (confidence < MIN_PROVIDER_CONFIDENCE) {
+        console.log(`[recognition] ${provider.name} failed: low confidence (${confidence.toFixed(2)})`);
+        continue;
+      }
+
+      const enriched = await ensureYoutubeLink(candidate);
+      console.log(`[recognition] ✓ ${provider.name} found: "${enriched.songName}" by "${enriched.artist}" (confidence: ${confidence.toFixed(2)})`);
+      return toProviderResponse(enriched);
+    } catch (error) {
+      console.warn(`[recognition] ${provider.name} error:`, (error as Error).message);
+    }
   }
 
-  throw new NoVerifiedResultError("Recognition succeeded but no verified YouTube result was found.");
+  console.log("[recognition] Provider chain exhausted, trying local metadata tags...");
+  const localTagResult = await extractMetadataFromLocalTags(buffer);
+
+  if (localTagResult) {
+    const enrichedTags = await ensureYoutubeLink(localTagResult);
+    console.log(`[recognition] ✓ Local tags found: "${enrichedTags.songName}" by "${enrichedTags.artist}"`);
+    return toProviderResponse(enrichedTags);
+  }
+
+  throw new NoVerifiedResultError("Recognition failed across all providers and local metadata tags.");
 }
 
-export async function recognizeSongFromImage(buffer: Buffer, fallbackLanguage = "eng"): Promise<SongMetadata> {
-  const candidate = await extractMetadataWithOcr(buffer, fallbackLanguage);
+export async function recognizeSongFromImage(buffer: Buffer, language = "eng"): Promise<SongMetadata[]> {
+  let visionResults: OcrCandidateMetadata[];
 
-  if (!candidate.songName || !candidate.artist || candidate.artist === UNKNOWN_METADATA.artist) {
-    return toFallbackResponse(candidate);
+  try {
+    visionResults = await extractMetadataWithHuggingFaceVision(buffer);
+  } catch (error) {
+    console.warn("[recognition] Vision extraction unavailable or rejected, falling back to OCR.", error);
+    const fallback = await extractMetadataWithOcr(buffer, language);
+    visionResults = [fallback];
   }
 
-  const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
-  if (providerResult) {
-    return toProviderResponse(providerResult);
+  if (visionResults.length === 0) {
+    throw new NoVerifiedResultError("No songs detected in image.");
   }
 
-  return toFallbackResponse(candidate);
+  const songMetadataResults: SongMetadata[] = [];
+
+  for (const candidate of visionResults) {
+    try {
+      const providerResult = await lookupSongByTitleAndArtist(candidate.songName, candidate.artist);
+      if (providerResult) {
+        songMetadataResults.push(toProviderResponse(providerResult));
+      } else {
+        songMetadataResults.push(toFallbackResponse(candidate));
+      }
+    } catch {
+      console.warn(`[recognition] Lookup failed for "${candidate.songName}" by "${candidate.artist}"`);
+    }
+  }
+
+  if (songMetadataResults.length === 0) {
+    throw new NoVerifiedResultError("No songs detected in image.");
+  }
+
+  return songMetadataResults;
 }
