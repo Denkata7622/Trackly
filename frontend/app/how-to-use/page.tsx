@@ -23,7 +23,7 @@ export default function HowToUsePage() {
 
   return (
     <main className="min-h-screen px-6 py-14 text-[var(--text)]">
-      <section className="mx-auto max-w-5xl rounded-3xl border border-white/10 bg-white/5 px-10 py-12 backdrop-blur-xl">
+      <section className="mx-auto max-w-5xl rounded-3xl border border-border bg-surface px-10 py-12 backdrop-blur-xl">
         <h1 className="text-5xl font-semibold tracking-tight">{isBg ? "Как се използва ПонотИИ" : "How to use PonotAI"}</h1>
         <p className="mt-5 max-w-2xl text-[var(--muted)] leading-relaxed">
           {isBg
@@ -34,8 +34,8 @@ export default function HowToUsePage() {
 
       <section className="mx-auto mt-14 max-w-6xl grid gap-6 md:grid-cols-2">
         {steps.map((s) => (
-          <div key={s.n} className="rounded-2xl border border-white/10 bg-white/5 p-7 backdrop-blur-xl">
-            <div className="text-sm font-semibold text-white/80">{s.n}</div>
+          <div key={s.n} className="rounded-2xl border border-border bg-surface p-7 backdrop-blur-xl">
+            <div className="text-sm font-semibold text-text-muted">{s.n}</div>
             <h3 className="mt-4 text-xl font-semibold">{s.title}</h3>
             <p className="mt-2 text-sm text-[var(--muted)] leading-relaxed">{s.text}</p>
           </div>
@@ -43,7 +43,7 @@ export default function HowToUsePage() {
       </section>
 
       <div className="mx-auto mt-10 max-w-6xl flex gap-3">
-        <Link href="/" className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-sm hover:bg-white/10">
+        <Link href="/" className="rounded-full border border-border bg-surface px-5 py-2 text-sm hover:bg-surface-raised">
           {isBg ? "Обратно към приложението" : "Back to app"}
         </Link>
       </div>

@@ -1,3 +1,4 @@
+import { scopedKey } from "../../lib/ProfileContext";
 import type { LibraryState, Playlist } from "./types";
 
 const FAVORITES_KEY = "ponotai.library.favorites";
@@ -28,11 +29,11 @@ function safeJsonParse<T>(value: string | null, fallback: T): T {
   }
 }
 
-export function loadLibraryState(): LibraryState {
+export function loadLibraryState(profileId: string): LibraryState {
   if (typeof window === "undefined") return initialState;
 
-  const rawFavorites = safeJsonParse<unknown>(window.localStorage.getItem(FAVORITES_KEY), []);
-  const rawPlaylists = safeJsonParse<unknown>(window.localStorage.getItem(PLAYLISTS_KEY), []);
+  const rawFavorites = safeJsonParse<unknown>(window.localStorage.getItem(scopedKey(FAVORITES_KEY, profileId)), []);
+  const rawPlaylists = safeJsonParse<unknown>(window.localStorage.getItem(scopedKey(PLAYLISTS_KEY, profileId)), []);
 
   const favorites = Array.isArray(rawFavorites)
     ? rawFavorites.filter((id): id is string => typeof id === "string")
@@ -43,8 +44,8 @@ export function loadLibraryState(): LibraryState {
   return { favorites, playlists };
 }
 
-export function persistLibraryState(state: LibraryState): void {
+export function persistLibraryState(state: LibraryState, profileId: string): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
-  window.localStorage.setItem(PLAYLISTS_KEY, JSON.stringify(state.playlists));
+  window.localStorage.setItem(scopedKey(FAVORITES_KEY, profileId), JSON.stringify(state.favorites));
+  window.localStorage.setItem(scopedKey(PLAYLISTS_KEY, profileId), JSON.stringify(state.playlists));
 }
