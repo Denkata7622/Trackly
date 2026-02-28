@@ -12,7 +12,9 @@
     "reset": "npm run clean && npm run setup",
     "test": "node --test --experimental-strip-types \"backend/tests/**/*.test.ts\" \"frontend/tests/**/*.test.ts\"",
     "test:backend": "node --test --experimental-strip-types \"backend/tests/**/*.test.ts\"",
-    "check:backend": "node scripts/backend-validate.mjs && npm run test:backend"
+    "check:backend": "node scripts/backend-validate.mjs && npm run test:backend",
+    "prebuild": "npm ci --prefix backend --include=dev && npm ci --prefix frontend --include=dev",
+    "start": "npm run start --prefix backend"
   },
   "dependencies": {
     "file-type": "^18.0.0"
