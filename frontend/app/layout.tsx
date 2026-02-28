@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import AppShell from "../components/AppShell";
 import { LanguageProvider } from "../lib/LanguageContext";
 import { ThemeProvider } from "../lib/ThemeContext";
+import { UserProvider } from "../src/context/UserContext";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -10,7 +11,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="text-[var(--text)]">
         <ThemeProvider>
           <LanguageProvider>
-          <AppShell>{children}</AppShell>
+            <UserProvider>
+              <AppShell>{children}</AppShell>
+            </UserProvider>
           </LanguageProvider>
         </ThemeProvider>
       </body>

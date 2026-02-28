@@ -23,6 +23,7 @@ import type { Track } from "../features/tracks/types";
 import { useLanguage } from "../lib/LanguageContext";
 import { useTheme } from "../lib/ThemeContext";
 import { t } from "../lib/translations";
+import { useUser } from "../src/context/UserContext";
 
 type Toast = { id: string; kind: "success" | "error" | "info"; message: string };
 type HistoryEntry = { id: string; source: "audio" | "ocr"; createdAt: string; song: SongMatch };
@@ -72,6 +73,7 @@ export function HomeContent() {
   const { language, setLanguage } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist, removeSongFromPlaylist } = useLibrary();
+  const { addToHistory: syncHistory, addFavorite } = useUser();
 
   const latestResult: SongRecognitionResult | null = useMemo(() => {
     if (audioResult) return songMatchToRecognitionResult(audioResult.primaryMatch, "audio");
@@ -122,7 +124,7 @@ export function HomeContent() {
     window.setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }
 
-  function addToHistory(source: HistoryEntry["source"], songs: SongMatch[]) {
+  function addToHistoryLocal(source: HistoryEntry["source"], songs: SongMatch[]) {
     const createdAt = new Date().toISOString();
     const entries = songs.map((song) => ({ id: crypto.randomUUID(), source, createdAt, song }));
     setHistory((prev) => [...entries, ...prev].slice(0, 18));
@@ -155,7 +157,8 @@ export function HomeContent() {
       const recognized = await recognizeFromAudio(audioBlob);
       setAudioResult(recognized);
       setImageResult(null);
-      addToHistory("audio", [recognized.primaryMatch]);
+      addToHistoryLocal("audio", [recognized.primaryMatch]);
+      void syncHistory({ method: "audio-record", title: recognized.primaryMatch.songName, artist: recognized.primaryMatch.artist, album: recognized.primaryMatch.album, coverUrl: recognized.primaryMatch.albumArtUrl, recognized: true });
       pushToast("success", t("toast_recognized", language, { song: recognized.primaryMatch.songName }));
     } catch (error) {
       setErrorMessage((error as Error).message || t("toast_audio_failed", language));
@@ -217,14 +220,16 @@ export function HomeContent() {
     const updatedResult = { ...pendingImageResult, songs: selectedSongs, count: selectedSongs.length };
     setImageResult(updatedResult);
     setAudioResult(null);
-    addToHistory("ocr", selectedSongs);
+    addToHistoryLocal("ocr", selectedSongs);
+    void Promise.all(selectedSongs.map((song) => syncHistory({ method: "album-image", title: song.songName, artist: song.artist, album: song.album, coverUrl: song.albumArtUrl, recognized: true })));
     setShowReviewModal(false);
     setPendingImageResult(null);
     pushToast("success", t("toast_added", language, { count: selectedSongs.length }));
   }
 
   function saveSong(song: SongMatch) {
-    addToHistory("audio", [song]);
+    addToHistoryLocal("audio", [song]);
+    void addFavorite({ title: song.songName, artist: song.artist, album: song.album, coverUrl: song.albumArtUrl });
     pushToast("success", t("toast_saved", language, { song: song.songName }));
   }
 

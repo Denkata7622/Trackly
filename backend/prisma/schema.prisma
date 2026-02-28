@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  username     String        @unique
+  email        String        @unique
+  passwordHash String
+  avatarBase64 String?
+  bio          String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  history      SearchHistory[]
+  favorites    Favorite[]
+  sharedSongs  SharedSong[]
+}
+
+model SearchHistory {
+  id         String   @id @default(cuid())
+  userId     String
+  method     String
+  title      String?
+  artist     String?
+  album      String?
+  coverUrl   String?
+  recognized Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model Favorite {
+  id       String   @id @default(cuid())
+  userId   String
+  title    String
+  artist   String
+  album    String?
+  coverUrl String?
+  savedAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, title, artist])
+  @@index([userId, savedAt])
+}
+
+model SharedSong {
+  id        String   @id @default(cuid())
+  shareCode String   @unique @default(cuid())
+  userId    String
+  title     String
+  artist    String
+  album     String?
+  coverUrl  String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([shareCode])
+}

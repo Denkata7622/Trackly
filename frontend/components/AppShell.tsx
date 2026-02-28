@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import BottomPlayBar from "./BottomPlayBar";
 import { PlayerProvider } from "./PlayerProvider";
 import type { Playlist } from "../features/library/types";
 import { useLanguage } from "../lib/LanguageContext";
 import { t } from "../lib/translations";
+import { useUser } from "../src/context/UserContext";
 
 type HistoryItem = {
   id: string;
@@ -35,10 +36,12 @@ const SECONDARY_NAV = [
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { language } = useLanguage();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
   const [librarySnapshot, setLibrarySnapshot] = useState<LibrarySnapshot>({ favorites: [], playlists: [] });
+  const { isAuthenticated, user, logout } = useUser();
 
   useEffect(() => {
     function syncSidebarData() {
@@ -84,6 +87,21 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <button className="navItem !p-2" onClick={() => setIsCollapsed((prev) => !prev)}>{isCollapsed ? "»" : "«"}</button>
           </div>
 
+
+          <div className="mb-4 flex items-center gap-2">
+            {!isAuthenticated ? (
+              <Link href="/auth" className="glassBtn">Sign In</Link>
+            ) : (
+              <details className="relative">
+                <summary className="glassBtn list-none cursor-pointer">{user?.username || "Account"}</summary>
+                <div className="absolute right-0 mt-2 w-44 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 text-sm">
+                  <Link href="/settings#profile" className="block rounded px-2 py-1 hover:bg-white/10">Profile</Link>
+                  <Link href="/settings" className="block rounded px-2 py-1 hover:bg-white/10">Settings</Link>
+                  <button className="mt-1 w-full rounded px-2 py-1 text-left hover:bg-white/10" onClick={async () => { await logout(); router.push("/"); }}>Sign Out</button>
+                </div>
+              </details>
+            )}
+          </div>
           <nav className="flex flex-col gap-2 text-base">
             {PRIMARY_NAV.map((item) => (
               <Link key={item.href} className={pathname === item.href ? "navItemActive" : "navItem"} href={item.href}>

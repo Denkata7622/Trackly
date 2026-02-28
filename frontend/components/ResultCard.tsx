@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import type { SongMatch } from "../features/recognition/api";
 import { t, type Language } from "../lib/translations";
+import { useUser } from "../src/context/UserContext";
 
 type ResultCardProps = {
   language: Language;
@@ -11,6 +13,10 @@ type ResultCardProps = {
 };
 
 export default function ResultCard({ language, song, onSave, onPlay }: ResultCardProps) {
+  const { isAuthenticated, shareSong } = useUser();
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareHint, setShareHint] = useState<string | null>(null);
+
   if (!song) {
     return (
       <section className="rounded-3xl border border-white/10 bg-white/5 p-8 text-center">
@@ -18,6 +24,26 @@ export default function ResultCard({ language, song, onSave, onPlay }: ResultCar
         <p className="mt-3 text-white/65">{t("empty_results_hint", language)}</p>
       </section>
     );
+  }
+
+  async function handleShare() {
+    if (!song) return;
+    if (!isAuthenticated) {
+      setShareHint("Sign in to share");
+      return;
+    }
+
+    const url = await shareSong({
+      title: song.songName,
+      artist: song.artist,
+      album: song.album,
+      coverUrl: song.albumArtUrl,
+    });
+
+    if (url) {
+      setShareUrl(url);
+      setShareHint(null);
+    }
   }
 
   return (
@@ -43,10 +69,23 @@ export default function ResultCard({ language, song, onSave, onPlay }: ResultCar
           <div className="mt-6 flex flex-wrap gap-3">
             <button className="pillAction" onClick={() => onPlay(song)}>▶ {t("btn_play", language)}</button>
             <button className="pillAction" onClick={() => onSave(song)}>💾 {t("btn_save", language)}</button>
+            <button className="glassBtn" onClick={() => void handleShare()}>🔗 Share</button>
             {song.platformLinks.spotify && <a className="pillAction bg-[#1db954]/20" href={song.platformLinks.spotify} target="_blank" rel="noreferrer">🟢 {t("btn_spotify", language)}</a>}
             {song.platformLinks.appleMusic && <a className="pillAction bg-rose-500/20" href={song.platformLinks.appleMusic} target="_blank" rel="noreferrer">🍎 {t("btn_apple_music", language)}</a>}
             {song.platformLinks.youtubeMusic && <a className="pillAction bg-red-500/20" href={song.platformLinks.youtubeMusic} target="_blank" rel="noreferrer">▶ {t("btn_youtube_music", language)}</a>}
           </div>
+
+          {(shareHint || shareUrl) && (
+            <div className="mt-3 rounded-xl border border-white/15 bg-black/25 p-3 text-sm">
+              {shareHint && <p>{shareHint}</p>}
+              {shareUrl && (
+                <div className="flex items-center gap-2">
+                  <a className="underline" href={shareUrl} target="_blank" rel="noreferrer">{shareUrl}</a>
+                  <button className="glassBtn !px-2 !py-1" onClick={() => void navigator.clipboard.writeText(shareUrl)}>Copy link</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </section>
