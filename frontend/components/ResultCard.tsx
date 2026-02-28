@@ -6,6 +6,7 @@ import { t, type Language } from "../lib/translations";
 import { Card } from "../src/components/ui/Card";
 import { Button } from "../src/components/ui/Button";
 import { Badge } from "../src/components/ui/Badge";
+import { useUser } from "../src/context/UserContext";
 
 type ResultCardProps = {
   language: Language;

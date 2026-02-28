@@ -1,0 +1,14 @@
+{
+  "users": [
+    {
+      "id": "ef341f33-a89c-496b-b07c-a4e4c6ee7a31",
+      "createdAt": "2026-02-28T16:19:39.969Z",
+      "username": "Denkata7622",
+      "email": "denislav.n.tzenov@outlook.com",
+      "passwordHash": "0a0e50fb0b446a7e8d05e44ac7af22f3:01750fb90377bd979a76dbc498a00bd1a92128572dc98aea93e105be9e224341d4941cd9841b6f52a14ee10ebb0eb22b4246cd021e0c6360ad96f69e38957481"
+    }
+  ],
+  "searchHistory": [],
+  "favorites": [],
+  "sharedSongs": []
+}

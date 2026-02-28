@@ -9,9 +9,7 @@ import type { Playlist } from "../features/library/types";
 import { scopedKey, useProfile } from "../lib/ProfileContext";
 import { useLanguage } from "../lib/LanguageContext";
 import { t } from "../lib/translations";
-import { Button } from "../src/components/ui/Button";
-import { Input } from "../src/components/ui/Input";
-import { Card } from "../src/components/ui/Card";
+import { useUser } from "../src/context/UserContext";
 
 type HistoryItem = {
   id: string;
@@ -35,18 +33,18 @@ const PRIMARY_NAV = [
 const SECONDARY_NAV = [
   { href: "/about", key: "nav_about", icon: "ℹ️" },
   { href: "/how-to-use", key: "nav_how_to_use", icon: "❓" },
-  { href: "/settings#profile", key: "nav_profile", icon: "👤" },
 ] as const;
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { language } = useLanguage();
-  const { profile, profiles, switchProfile, createProfile, deleteProfile } = useProfile();
+  const { profile } = useProfile();
+  const { user, isAuthenticated, logout } = useUser();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
   const [librarySnapshot, setLibrarySnapshot] = useState<LibrarySnapshot>({ favorites: [], playlists: [] });
-  const [newProfileName, setNewProfileName] = useState("");
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   useEffect(() => {
     function syncSidebarData() {
@@ -75,63 +73,159 @@ export default function AppShell({ children }: { children: ReactNode }) {
     return recentHistory.filter((item) => item.createdAt?.startsWith(today)).length;
   }, [recentHistory]);
 
+  async function handleLogout() {
+    await logout();
+    setShowUserMenu(false);
+    router.push("/");
+  }
+
+  // Avatar initials
+  const initials = (user?.username ?? "G")
+    .split(" ")
+    .map((c) => c[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <PlayerProvider>
       <div className="flex min-h-screen">
-        <aside className={`hidden p-4 backdrop-blur-xl transition-all md:block ${isCollapsed ? "w-20" : "w-72"}`} style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)" }}>
+        {/* Sidebar */}
+        <aside
+          className={`hidden p-4 backdrop-blur-xl transition-all md:block ${isCollapsed ? "w-20" : "w-72"}`}
+          style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)" }}
+        >
+          {/* Logo */}
           <div className="mb-8 mt-2 flex items-center justify-between">
             <Link href="/" className="block select-none">
               <h1 className="logoWrapper flex items-center gap-2">
-                <span className="logoDot"></span>
-                {!isCollapsed && <span className="logoText">{language === "bg" ? "ПонотИИ" : "PonotAI"}</span>}
+                <span className="logoDot" />
+                {!isCollapsed && (
+                  <span className="logoText">{language === "bg" ? "ПонотИИ" : "PonotAI"}</span>
+                )}
               </h1>
             </Link>
-            <Button variant="ghost" size="sm" className="navItem !p-2" onClick={() => setIsCollapsed((prev) => !prev)}>{isCollapsed ? "»" : "«"}</Button>
+            <button
+              className="navItem !p-2 text-sm"
+              onClick={() => setIsCollapsed((prev) => !prev)}
+            >
+              {isCollapsed ? "»" : "«"}
+            </button>
           </div>
 
+          {/* User section */}
           {!isCollapsed && (
-            <Card className="mb-4 p-3 text-xs">
-              <p className="text-[var(--muted)]">{language === "bg" ? "Профил" : "Profile"}</p>
-              <div className="mt-2 flex gap-2">
-                <select className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-2 py-1" value={profile.id} onChange={(e) => switchProfile(e.target.value)}>
-                  {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <Link className="rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-2 py-1" href="/settings#profile">⚙️</Link>
-              </div>
-              <p className="mt-1 truncate text-[11px] text-[var(--muted)]">{profile.email || (language === "bg" ? "Няма имейл" : "No email")}</p>
-              <div className="mt-2 flex gap-2">
-                <Input className="flex-1 py-1" placeholder={language === "bg" ? "Нов профил" : "New profile"} value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} />
-                <Button variant="secondary" size="sm" onClick={() => { createProfile(newProfileName); setNewProfileName(""); }}>+</Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  className="disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={profiles.length <= 1}
-                  onClick={() => deleteProfile(profile.id)}
-                  title={language === "bg" ? "Изтрий активния профил" : "Delete active profile"}
-                >
-                  🗑
-                </Button>
-              </div>
-            </Card>
+            <div className="mb-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-xs">
+              {isAuthenticated && user ? (
+                <div className="relative">
+                  <button
+                    className="flex w-full items-center gap-2 text-left"
+                    onClick={() => setShowUserMenu((v) => !v)}
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-bold text-white">
+                      {initials}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-[var(--text)]">{user.username}</p>
+                      <p className="truncate text-[var(--muted)]">{user.email}</p>
+                    </div>
+                    <span className="text-[var(--muted)]">▾</span>
+                  </button>
+
+                  {showUserMenu && (
+                    <div className="absolute left-0 right-0 top-10 z-20 rounded-xl border border-[var(--border)] bg-[var(--surface-2,var(--surface))] p-2 shadow-xl">
+                      <Link
+                        href="/profile"
+                        className="block rounded-lg px-3 py-2 text-sm hover:bg-[var(--hover-bg)]"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        👤 {language === "bg" ? "Профил" : "Profile"}
+                      </Link>
+                      <Link
+                        href="/settings"
+                        className="block rounded-lg px-3 py-2 text-sm hover:bg-[var(--hover-bg)]"
+                        onClick={() => setShowUserMenu(false)}
+                      >
+                        ⚙️ {language === "bg" ? "Настройки" : "Settings"}
+                      </Link>
+                      <button
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-[var(--hover-bg)]"
+                        onClick={handleLogout}
+                      >
+                        🚪 {language === "bg" ? "Изход" : "Sign out"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="text-[var(--muted)]">
+                    {language === "bg" ? "Не си влязъл" : "Not signed in"}
+                  </p>
+                  <div className="flex gap-2">
+                    <Link
+                      href="/auth"
+                      className="flex-1 rounded-lg border border-[var(--accent)] bg-[var(--active-bg)] px-2 py-1.5 text-center text-xs font-semibold text-[var(--text)] hover:bg-[var(--accent)]/30"
+                    >
+                      {language === "bg" ? "Влез" : "Sign in"}
+                    </Link>
+                    <Link
+                      href="/auth?tab=signup"
+                      className="flex-1 rounded-lg border border-[var(--border)] px-2 py-1.5 text-center text-xs hover:bg-[var(--hover-bg)]"
+                    >
+                      {language === "bg" ? "Регистрация" : "Sign up"}
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
+          {/* Collapsed user avatar */}
+          {isCollapsed && (
+            <div className="mb-4 flex justify-center">
+              {isAuthenticated ? (
+                <Link href="/profile">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-bold text-white">
+                    {initials}
+                  </div>
+                </Link>
+              ) : (
+                <Link href="/auth">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-base">
+                    👤
+                  </div>
+                </Link>
+              )}
+            </div>
+          )}
+
+          {/* Primary nav */}
           <nav className="flex flex-col gap-2 text-base">
             {PRIMARY_NAV.map((item) => (
-              <Link key={item.href} className={pathname === item.href ? "navItemActive" : "navItem"} href={item.href}>
+              <Link
+                key={item.href}
+                className={pathname === item.href ? "navItemActive" : "navItem"}
+                href={item.href}
+              >
                 <span>{item.icon}</span>
                 {!isCollapsed && <span>{t(item.key, language)}</span>}
               </Link>
             ))}
           </nav>
 
+          {/* Recent history panel */}
           {!isCollapsed && pathname === "/" && (
             <div className="mt-6 space-y-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-xs">
-              <h3 className="text-sm font-semibold text-[var(--text)]">{t("sidebar_recent_history", language)}</h3>
+              <h3 className="text-sm font-semibold text-[var(--text)]">
+                {t("sidebar_recent_history", language)}
+              </h3>
               <ul className="space-y-1 text-[var(--muted)]">
                 {recentHistory.length === 0 && <li>{t("history_empty", language)}</li>}
                 {recentHistory.map((item) => (
-                  <li key={item.id} className="truncate">• {item.song?.songName ?? "-"} — {item.song?.artist ?? "-"}</li>
+                  <li key={item.id} className="truncate">
+                    • {item.song?.songName ?? "-"} — {item.song?.artist ?? "-"}
+                  </li>
                 ))}
               </ul>
               <div className="rounded-lg border border-[var(--border)] bg-[var(--input-bg)] p-2 text-[var(--muted)]">
@@ -152,10 +246,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </div>
           )}
 
+          {/* Secondary nav */}
           <div className="mt-6 border-t border-[var(--border)] pt-4">
             <nav className="flex flex-col gap-2 text-sm">
               {SECONDARY_NAV.map((item) => (
-                <Link key={item.href} className={pathname === item.href ? "navItemActive" : "navItem"} href={item.href}>
+                <Link
+                  key={item.href}
+                  className={pathname === item.href ? "navItemActive" : "navItem"}
+                  href={item.href}
+                >
                   <span>{item.icon}</span>
                   {!isCollapsed && <span>{t(item.key, language)}</span>}
                 </Link>

@@ -1,12 +1,21 @@
-export async function apiFetch(path: string, options?: RequestInit) {
-  const token = typeof window === "undefined" ? null : localStorage.getItem("ponotii_token");
-  const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
-  return fetch(`${base}${path}`, {
+const API_BASE =
+  (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000").replace(/\/$/, "");
+
+const TOKEN_KEY = "ponotii_token";
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(TOKEN_KEY);
+}
+
+export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  const token = getToken(); // always read fresh — never stale
+  return fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
+      ...(options?.headers ?? {}),
     },
   });
 }
