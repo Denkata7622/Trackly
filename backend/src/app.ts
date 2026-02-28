@@ -7,6 +7,8 @@ import authRouter from "./modules/auth/auth.routes";
 import historyRouter from "./modules/history/history.routes";
 import favoritesRouter from "./modules/favorites/favorites.routes";
 import shareRouter from "./modules/share/share.routes";
+import libraryRouter from "./modules/library/library.routes";
+import playlistsRouter from "./modules/playlists/playlists.routes";
 import recognitionRouter from "./modules/recognition/recognition.routes";
 import { recognitionRateLimit } from "./middlewares/rateLimit.middleware";
 
@@ -24,6 +26,8 @@ app.use("/api/history", historyRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/favorites", favoritesRouter);
 app.use("/api/share", shareRouter);
+app.use("/api/library", libraryRouter);
+app.use("/api/playlists", playlistsRouter);
 
 app.use(errorMiddleware);
 

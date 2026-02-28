@@ -240,7 +240,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <div className="mt-6 space-y-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-xs text-[var(--muted)]">
               <h3 className="text-sm font-semibold text-[var(--text)]">{t("library_playlists", language)}</h3>
               {librarySnapshot.playlists.map((playlist) => (
-                <p key={playlist.id}>• {playlist.name} ({playlist.songIds.length})</p>
+                <p key={playlist.id}>• {playlist.name} ({playlist.songs.length})</p>
               ))}
               {librarySnapshot.playlists.length === 0 && <p>{t("no_playlists_created", language)}</p>}
             </div>

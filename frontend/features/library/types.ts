@@ -1,7 +1,17 @@
+export type PlaylistSong = {
+  title: string;
+  artist: string;
+  album?: string;
+  coverUrl?: string;
+};
+
 export type Playlist = {
   id: string;
+  userId?: string;
   name: string;
-  songIds: string[];
+  songs: PlaylistSong[];
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type LibraryState = {

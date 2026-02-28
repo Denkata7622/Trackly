@@ -1,12 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
 import { useUser } from "../context/UserContext";
+import { useTheme } from "../../lib/ThemeContext";
+import { exportLibraryAsJSON, exportLibraryAsCSV, importLibraryFromJSON } from "../lib/libraryExport";
+import type { Playlist } from "../features/library/types";
+
+function getLibraryData() {
+  if (typeof window === "undefined") {
+    return { favorites: [], history: [], playlists: [] };
+  }
+  try {
+    const favorites = JSON.parse(window.localStorage.getItem("ponotai.library.favorites") ?? "[]");
+    const playlists = JSON.parse(window.localStorage.getItem("ponotai.library.playlists") ?? "[]");
+    const history = JSON.parse(window.localStorage.getItem("ponotai-history") ?? "[]");
+    return { favorites, history, playlists };
+  } catch {
+    return { favorites: [], history: [], playlists: [] };
+  }
+}
 
 export default function SettingsPage() {
+  const libraryData = getLibraryData();
   const {
     user,
     preferences,
@@ -15,7 +33,12 @@ export default function SettingsPage() {
     setPreferences,
     deleteAccount,
     isAuthenticated,
+    favorites,
+    history,
+    addFavorite,
   } = useUser();
+
+  const { theme, toggleTheme } = useTheme();
 
   const [displayName, setDisplayName] = useState(user?.username ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
@@ -25,6 +48,8 @@ export default function SettingsPage() {
   const [showDangerModal, setShowDangerModal] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canDelete = confirmText === (user?.username ?? "");
 
@@ -76,6 +101,53 @@ export default function SettingsPage() {
     }
   }
 
+  function handleExportJSON() {
+    try {
+      exportLibraryAsJSON(
+        favorites,
+        history,
+        playlists,
+        user?.username || "library"
+      );
+      alert("✅ Library exported successfully as JSON!");
+    } catch (e) {
+      console.error("Export failed:", e);
+      alert("❌ Export failed: " + (e instanceof Error ? e.message : "Unknown error"));
+    }
+  }
+
+  function handleExportCSV() {
+    try {
+      exportLibraryAsCSV(
+        favorites,
+        history,
+        user?.username || "library"
+      );
+      alert("✅ Library exported successfully as CSV!");
+    } catch (e) {
+      console.error("Export failed:", e);
+      alert("❌ Export failed: " + (e instanceof Error ? e.message : "Unknown error"));
+    }
+  }
+
+  async function handleImport(file: File) {
+    try {
+      const data = await importLibraryFromJSON(file);
+      // Merge imported data with existing data
+      for (const fav of data.data.favorites) {
+        await addFavorite({
+          title: fav.title,
+          artist: fav.artist,
+          album: fav.album,
+          coverUrl: fav.coverUrl,
+        });
+      }
+      alert("Library imported successfully!");
+    } catch (e) {
+      alert(`Import failed: ${(e as Error).message}`);
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
       <h1 className="text-3xl font-bold text-text-primary tracking-tight">Settings</h1>
@@ -83,6 +155,24 @@ export default function SettingsPage() {
       <Card className="p-6 space-y-4">
         <h2 className="text-xl font-semibold text-text-primary">Account</h2>
         {saveError && <p className="text-sm text-danger">{saveError}</p>}
+        
+        {user && (
+          <div className="mb-4 p-4 rounded-lg bg-surface-raised border border-border">
+            <p className="text-xs text-text-muted mb-1">User ID</p>
+            <p className="text-sm font-mono text-text-primary break-all">{user.id}</p>
+            <p className="text-xs text-text-muted mt-3 mb-1">Email</p>
+            <p className="text-sm text-text-primary">{user.email}</p>
+            <p className="text-xs text-text-muted mt-3 mb-1">Member since</p>
+            <p className="text-sm text-text-primary">{new Date(user.createdAt).toLocaleDateString()}</p>
+            {user.bio && (
+              <>
+                <p className="text-xs text-text-muted mt-3 mb-1">Bio</p>
+                <p className="text-sm text-text-primary">{user.bio}</p>
+              </>
+            )}
+          </div>
+        )}
+        
         <div>
           <label className="text-sm font-medium text-text-primary mb-1 block">Display name</label>
           <div className="flex gap-2">
@@ -128,12 +218,17 @@ export default function SettingsPage() {
 
       <Card className="p-6 space-y-4">
         <h2 className="text-xl font-semibold text-text-primary">Appearance</h2>
-        <Button
-          variant="secondary"
-          onClick={() => setPreferences({ theme: preferences.theme === "dark" ? "light" : "dark" })}
-        >
-          Theme: {preferences.theme}
-        </Button>
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <p className="text-sm text-text-muted">Current theme: <span className="font-medium text-text-primary capitalize">{theme}</span></p>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
+          </Button>
+        </div>
       </Card>
 
       <Card className="p-6 space-y-4">
@@ -144,6 +239,51 @@ export default function SettingsPage() {
         >
           {preferences.notifications ? "Disable" : "Enable"} notifications
         </Button>
+      </Card>
+
+      <Card className="p-6 space-y-4">
+        <h2 className="text-xl font-semibold text-text-primary">Data Management</h2>
+        <p className="text-sm text-text-muted mb-4">Export or import your library data for backup or migration.</p>
+        
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium text-text-primary mb-2 block">Export Library</label>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={handleExportJSON} className="flex-1">
+                📥 Export as JSON
+              </Button>
+              <Button variant="secondary" onClick={handleExportCSV} className="flex-1">
+                📄 Export as CSV
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-text-primary mb-2 block">Import Library</label>
+            <div className="flex gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImport(file);
+                }}
+                className="hidden"
+              />
+              <Button 
+                variant="secondary"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex-1"
+              >
+                📤 Import from JSON
+              </Button>
+            </div>
+            <p className="text-xs text-text-muted mt-2">
+              Statistics: {libraryData.favorites.length} favorites · {libraryData.playlists.length} playlists · {libraryData.history.length} history entries
+            </p>
+          </div>
+        </div>
       </Card>
 
       <Card className="p-6 space-y-4" style={{ borderColor: "var(--color-danger, #ef4444)" }}>

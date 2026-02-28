@@ -3,12 +3,46 @@
     {
       "id": "ef341f33-a89c-496b-b07c-a4e4c6ee7a31",
       "createdAt": "2026-02-28T16:19:39.969Z",
-      "username": "Denkata7622",
+      "username": "NIGA",
       "email": "denislav.n.tzenov@outlook.com",
-      "passwordHash": "0a0e50fb0b446a7e8d05e44ac7af22f3:01750fb90377bd979a76dbc498a00bd1a92128572dc98aea93e105be9e224341d4941cd9841b6f52a14ee10ebb0eb22b4246cd021e0c6360ad96f69e38957481"
+      "passwordHash": "0a0e50fb0b446a7e8d05e44ac7af22f3:01750fb90377bd979a76dbc498a00bd1a92128572dc98aea93e105be9e224341d4941cd9841b6f52a14ee10ebb0eb22b4246cd021e0c6360ad96f69e38957481",
+      "bio": "JEJEJE"
     }
   ],
-  "searchHistory": [],
-  "favorites": [],
-  "sharedSongs": []
+  "searchHistory": [
+    {
+      "id": "80ae44f0-bb36-40a3-89dc-af5e9a6d720f",
+      "createdAt": "2026-02-28T19:14:59.966Z",
+      "userId": "ef341f33-a89c-496b-b07c-a4e4c6ee7a31",
+      "method": "album-image",
+      "title": "I'm Legendary",
+      "artist": "Mason Jar Moonshine",
+      "album": "Unknown Album",
+      "coverUrl": "https://picsum.photos/seed/recognized/120",
+      "recognized": true
+    }
+  ],
+  "favorites": [
+    {
+      "id": "d5c1d049-f81c-42bd-b9e9-4f4b32d9cc40",
+      "savedAt": "2026-02-28T16:24:37.735Z",
+      "userId": "ef341f33-a89c-496b-b07c-a4e4c6ee7a31",
+      "title": "I'm Legendary",
+      "artist": "Mason Jar Moonshine",
+      "album": "Unknown Album",
+      "coverUrl": "https://picsum.photos/seed/recognized/120"
+    }
+  ],
+  "sharedSongs": [
+    {
+      "id": "209c99fc-7951-425c-9c8f-4bdea1c60ab6",
+      "shareCode": "7e023c3a8fdd43bd86c3435dc542ba16",
+      "createdAt": "2026-02-28T16:24:09.515Z",
+      "userId": "ef341f33-a89c-496b-b07c-a4e4c6ee7a31",
+      "title": "I'm Legendary",
+      "artist": "Mason Jar Moonshine",
+      "album": "Unknown Album",
+      "coverUrl": "https://picsum.photos/seed/recognized/120"
+    }
+  ]
 }

@@ -5,6 +5,7 @@ import { LanguageProvider } from "../lib/LanguageContext";
 import { ThemeProvider } from "../lib/ThemeContext";
 import { ProfileProvider } from "../lib/ProfileContext";
 import { UserProvider } from "../src/context/UserContext";
+import { KeyboardShortcuts } from "../src/components/KeyboardShortcuts";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -14,6 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <ThemeProvider>
             <LanguageProvider>
               <ProfileProvider>
+                <KeyboardShortcuts />
                 <AppShell>{children}</AppShell>
               </ProfileProvider>
             </LanguageProvider>

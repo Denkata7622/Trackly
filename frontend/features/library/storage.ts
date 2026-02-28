@@ -15,8 +15,14 @@ function isPlaylist(value: unknown): value is Playlist {
   return (
     typeof candidate.id === "string" &&
     typeof candidate.name === "string" &&
-    Array.isArray(candidate.songIds) &&
-    candidate.songIds.every((id) => typeof id === "string")
+    Array.isArray(candidate.songs) &&
+    candidate.songs.every(
+      (song) =>
+        typeof song === "object" &&
+        song !== null &&
+        typeof (song as any).title === "string" &&
+        typeof (song as any).artist === "string"
+    )
   );
 }
 

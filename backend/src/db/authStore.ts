@@ -45,11 +45,28 @@ export type SharedSongRecord = {
   createdAt: string;
 };
 
+export type PlaylistRecord = {
+  id: string;
+  userId: string;
+  name: string;
+  songs: PlaylistSongRecord[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PlaylistSongRecord = {
+  title: string;
+  artist: string;
+  album?: string;
+  coverUrl?: string;
+};
+
 type AppDb = {
   users: UserRecord[];
   searchHistory: SearchHistoryRecord[];
   favorites: FavoriteRecord[];
   sharedSongs: SharedSongRecord[];
+  playlists: PlaylistRecord[];
 };
 
 const DB_PATH = path.join(process.cwd(), "backend", "data", "appdb.json");
@@ -59,7 +76,7 @@ async function ensureDb() {
   try {
     await fs.access(DB_PATH);
   } catch {
-    const initial: AppDb = { users: [], searchHistory: [], favorites: [], sharedSongs: [] };
+    const initial: AppDb = { users: [], searchHistory: [], favorites: [], sharedSongs: [], playlists: [] };
     await fs.writeFile(DB_PATH, JSON.stringify(initial, null, 2));
   }
 }
@@ -99,6 +116,7 @@ export async function deleteUserCascade(id: string): Promise<void> {
   db.searchHistory = db.searchHistory.filter((h) => h.userId !== id);
   db.favorites = db.favorites.filter((f) => f.userId !== id);
   db.sharedSongs = db.sharedSongs.filter((s) => s.userId !== id);
+  db.playlists = db.playlists.filter((p) => p.userId !== id);
   await writeDb(db);
 }
 
@@ -173,3 +191,102 @@ export async function createSharedSong(item: Omit<SharedSongRecord, "id" | "crea
 export async function findSharedSongByCode(shareCode: string): Promise<SharedSongRecord | null> {
   return (await readDb()).sharedSongs.find((s) => s.shareCode === shareCode) || null;
 }
+
+export async function getUserPlaylists(userId: string): Promise<PlaylistRecord[]> {
+  return (await readDb()).playlists.filter((p) => p.userId === userId).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function createPlaylist(userId: string, name: string, id?: string, songs?: PlaylistSongRecord[]): Promise<PlaylistRecord> {
+  const db = await readDb();
+  const now = new Date().toISOString();
+  
+  const playlist: PlaylistRecord = {
+    id: id || randomUUID(),
+    userId,
+    name,
+    songs: songs || [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  
+  db.playlists.push(playlist);
+  await writeDb(db);
+  return playlist;
+}
+
+export async function updatePlaylistName(playlistId: string, name: string): Promise<PlaylistRecord | null> {
+  const db = await readDb();
+  const playlist = db.playlists.find((p) => p.id === playlistId);
+  if (!playlist) return null;
+  
+  playlist.name = name;
+  playlist.updatedAt = new Date().toISOString();
+  await writeDb(db);
+  return playlist;
+}
+
+export async function addSongToPlaylist(
+  playlistId: string,
+  song: Omit<PlaylistSongRecord, "addedAt">
+): Promise<PlaylistRecord | null> {
+  const db = await readDb();
+  const playlist = db.playlists.find((p) => p.id === playlistId);
+  if (!playlist) return null;
+  
+  // Check if song already exists
+  const exists = playlist.songs.some((s) => s.title === song.title && s.artist === song.artist);
+  if (exists) return playlist;
+  
+  const songRecord: PlaylistSongRecord = {
+    title: song.title,
+    artist: song.artist,
+    album: song.album,
+    coverUrl: song.coverUrl,
+  };
+  
+  playlist.songs.push(songRecord);
+  playlist.updatedAt = new Date().toISOString();
+  await writeDb(db);
+  return playlist;
+}
+
+export async function removeSongFromPlaylist(
+  playlistId: string,
+  title: string,
+  artist: string
+): Promise<PlaylistRecord | null> {
+  const db = await readDb();
+  const playlist = db.playlists.find((p) => p.id === playlistId);
+  if (!playlist) return null;
+  
+  const initialLength = playlist.songs.length;
+  playlist.songs = playlist.songs.filter((s) => !(s.title === title && s.artist === artist));
+  
+  if (playlist.songs.length < initialLength) {
+    playlist.updatedAt = new Date().toISOString();
+    await writeDb(db);
+  }
+  
+  return playlist;
+}
+
+export async function deletePlaylist(playlistId: string): Promise<"ok" | "missing"> {
+  const db = await readDb();
+  const index = db.playlists.findIndex((p) => p.id === playlistId);
+  if (index < 0) return "missing";
+  
+  db.playlists.splice(index, 1);
+  await writeDb(db);
+  return "ok";
+}
+
+export async function findPlaylistById(playlistId: string): Promise<PlaylistRecord | null> {
+  return (await readDb()).playlists.find((p) => p.id === playlistId) || null;
+}
+
+export async function clearUserPlaylists(userId: string): Promise<void> {
+  const db = await readDb();
+  db.playlists = db.playlists.filter((p) => p.userId !== userId);
+  await writeDb(db);
+}
+

@@ -54,6 +54,7 @@ function toRecognizedTrack(result: SongRecognitionResult): Track {
 }
 
 export function HomeContent() {
+  const { addToHistory, addFavorite, addManualSubmission } = useUser();
   const [audioResult, setAudioResult] = useState<AudioRecognitionResult | null>(null);
   const [imageResult, setImageResult] = useState<ImageRecognitionResult | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -70,6 +71,7 @@ export function HomeContent() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [favoritesMenuOpen, setFavoritesMenuOpen] = useState<string | null>(null);
 
   const imageCache = useRef<Map<string, ImageRecognitionResult>>(new Map());
 
@@ -77,11 +79,30 @@ export function HomeContent() {
   const { language, setLanguage } = useLanguage();
   const { theme, toggleTheme } = useTheme();
   const { profile } = useProfile();
-  const { addHistory: addUserHistory, addFavorite, addManualSubmission } = useUser();
   const profileHistoryKey = scopedKey(HISTORY_KEY, profile.id);
   const profileMaxSongsKey = scopedKey(MAX_SONGS_KEY, profile.id);
   const profileOcrLanguageKey = scopedKey(OCR_LANGUAGE_KEY, profile.id);
   const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist, removeSongFromPlaylist } = useLibrary(profile.id);
+
+  // Adapter functions to convert track data for playlist operations
+  const handleAddSongToPlaylist = (trackId: string, playlistId: string) => {
+    // Find the track in our tracks list
+    const track = tracks.find((t) => t.id === trackId);
+    if (!track) return;
+
+    addSongToPlaylist(playlistId, {
+      title: track.title,
+      artist: track.artistName,
+      coverUrl: track.artworkUrl,
+    });
+  };
+
+  const handleRemoveSongFromPlaylist = (trackId: string, playlistId: string) => {
+    const track = tracks.find((t) => t.id === trackId);
+    if (!track) return;
+
+    removeSongFromPlaylist(playlistId, track.title, track.artistName);
+  };
 
   const latestResult: SongRecognitionResult | null = useMemo(() => {
     if (audioResult) return songMatchToRecognitionResult(audioResult.primaryMatch, "audio");
@@ -95,6 +116,14 @@ export function HomeContent() {
     [...recognizedTrack, ...recentTracksSeed].forEach((track) => uniqueTracks.set(track.id, track));
     return [...uniqueTracks.values()];
   }, [latestResult]);
+
+  const stats = useMemo(() => {
+    return {
+      totalHistory: history.length,
+      totalFavorites: favoritesSet.size,
+      totalPlaylists: playlists.length,
+    };
+  }, [history.length, favoritesSet.size, playlists.length]);
 
   useEffect(() => {
     const savedHistory = localStorage.getItem(profileHistoryKey);
@@ -167,23 +196,25 @@ export function HomeContent() {
       const recognized = await recognizeFromAudio(audioBlob);
       setAudioResult(recognized);
       setImageResult(null);
-      addToHistory("audio", [recognized.primaryMatch]);
-      addUserHistory({
+      await addToHistory({
         id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
         method: "audio-record",
+        title: recognized.primaryMatch.songName,
+        artist: recognized.primaryMatch.artist,
+        album: recognized.primaryMatch.album,
+        coverUrl: recognized.primaryMatch.albumArtUrl,
         recognized: true,
-        result: {
-          title: recognized.primaryMatch.songName,
-          artist: recognized.primaryMatch.artist,
-          album: recognized.primaryMatch.album,
-          coverUrl: recognized.primaryMatch.albumArtUrl,
-        },
+        createdAt: new Date().toISOString(),
       });
       pushToast("success", t("toast_recognized", language, { song: recognized.primaryMatch.songName }));
     } catch (error) {
       setErrorMessage((error as Error).message || t("toast_audio_failed", language));
-      addUserHistory({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), method: "audio-record", recognized: false, result: null });
+      await addToHistory({
+        id: crypto.randomUUID(),
+        method: "audio-record",
+        recognized: false,
+        createdAt: new Date().toISOString(),
+      });
       pushToast("error", t("toast_audio_failed", language));
     } finally {
       setIsRecording(false);
@@ -237,19 +268,23 @@ export function HomeContent() {
     }
   }
 
-  function handleConfirmSongs(selectedSongs: SongMatch[]) {
+  async function handleConfirmSongs(selectedSongs: SongMatch[]) {
     if (!pendingImageResult) return;
     const updatedResult = { ...pendingImageResult, songs: selectedSongs, count: selectedSongs.length };
     setImageResult(updatedResult);
     setAudioResult(null);
-    addToHistory("ocr", selectedSongs);
-    selectedSongs.forEach((song) => addUserHistory({
-      id: crypto.randomUUID(),
-      timestamp: new Date().toISOString(),
-      method: "album-image",
-      recognized: true,
-      result: { title: song.songName, artist: song.artist, album: song.album, coverUrl: song.albumArtUrl },
-    }));
+    for (const song of selectedSongs) {
+      await addToHistory({
+        id: crypto.randomUUID(),
+        method: "album-image",
+        title: song.songName,
+        artist: song.artist,
+        album: song.album,
+        coverUrl: song.albumArtUrl,
+        recognized: true,
+        createdAt: new Date().toISOString(),
+      });
+    }
     setShowReviewModal(false);
     setPendingImageResult(null);
     pushToast("success", t("toast_added", language, { count: selectedSongs.length }));
@@ -346,21 +381,96 @@ export function HomeContent() {
 
             <ResultCard language={language} song={latestResult} onSave={saveSong} onPlay={playSong} onFavorite={favoriteSong} />
 
-            <HistoryGrid language={language} items={history} onDelete={(id) => setHistory((prev) => prev.filter((entry) => entry.id !== id))} />
+            <HistoryGrid language={language} items={history} onDelete={(id) => setHistory((prev) => prev.filter((entry) => entry.id !== id))} onPlay={playSong} />
+
+            {(stats.totalFavorites > 0 || stats.totalPlaylists > 0) && (
+              <Card className="rounded-3xl bg-gradient-to-br from-brand-500/10 to-brand-600/5 border border-brand-300/20 p-6">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-2xl font-bold text-text-primary">{stats.totalFavorites}</p>
+                    <p className="text-xs text-text-muted mt-1">Favorites</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-text-primary">{stats.totalPlaylists}</p>
+                    <p className="text-xs text-text-muted mt-1">Playlists</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-text-primary">{stats.totalHistory}</p>
+                    <p className="text-xs text-text-muted mt-1">History</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {playlists.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold">Recent Playlists</h2>
+                  <Button variant="ghost" size="sm" onClick={() => setIsLibraryOpen(!isLibraryOpen)}>View all</Button>
+                </div>
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+                  {playlists.slice(0, 4).map((playlist) => (
+                    <Card key={playlist.id} className="p-4 hover:border-brand-500/50 transition cursor-pointer" onClick={() => setIsLibraryOpen(true)}>
+                      <p className="font-medium text-text-primary truncate">{playlist.name}</p>
+                      <p className="text-xs text-text-muted mt-1">{playlist.songs.length} songs</p>
+                    </Card>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {favoritesSet.size > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold">Your Favorites</h2>
+                  <span className="text-xs text-text-muted bg-surface rounded-full px-2 py-1">{favoritesSet.size} songs</span>
+                </div>
+                <div className="space-y-2">
+                  {Array.from(favoritesSet).slice(0, 6).map((trackId) => {
+                    const songTitle = trackId.split("-").slice(0, -1).join(" ");
+                    const coverUrl = `https://picsum.photos/seed/${trackId}/200`;
+                    const isMenuOpen = favoritesMenuOpen === trackId;
+                    return (
+                      <div key={trackId} className="group relative flex items-center gap-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 transition-all hover:border-[var(--accent)]/50 hover:shadow-lg">
+                        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-[var(--border)]">
+                          <img src={coverUrl} alt={songTitle} className="h-full w-full object-cover" />
+                          <button onClick={() => playSong({ songName: songTitle, artist: "Favorite", album: "Collection", albumArtUrl: coverUrl, youtubeVideoId: "" })} className="absolute inset-0 grid place-items-center bg-black/40 opacity-0 transition group-hover:opacity-100"><span className="h-8 w-8 grid place-items-center rounded-full bg-[var(--accent)] text-white text-sm">▶</span></button>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-text-primary truncate text-sm">{songTitle}</p>
+                          <p className="text-xs text-text-muted">Favorite</p>
+                        </div>
+                        <div className="relative">
+                          <button onClick={() => setFavoritesMenuOpen(isMenuOpen ? null : trackId)} className="rounded-lg p-2 opacity-0 transition group-hover:opacity-100 hover:bg-surface-raised">⋯</button>
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-2 w-48 rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg z-50">
+                              <button onClick={() => { toggleFavorite(trackId); setFavoritesMenuOpen(null); }} className="block w-full px-4 py-2 text-left text-sm hover:bg-surface-raised text-text-primary rounded-t-lg">Remove from Favorites</button>
+                              {playlists.length > 0 && (<><hr className="border-[var(--border)]" />{playlists.slice(0, 3).map((playlist) => (<button key={playlist.id} onClick={() => { handleAddSongToPlaylist(trackId, playlist.id); setFavoritesMenuOpen(null); }} className="block w-full px-4 py-2 text-left text-sm hover:bg-surface-raised text-text-primary">Add to {playlist.name}</button>))}</>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {favoritesSet.size > 6 && <p className="text-xs text-center text-text-muted py-2">+{favoritesSet.size - 6} more in Library</p>}
+              </section>
+            )}
 
             <section className="space-y-3">
               <h2 className="text-xl font-semibold">{t("songs_heading", language)}</h2>
-              {tracks.map((track) => (
+              {tracks.length > 0 ? tracks.map((track) => (
                 <TrackCard
                   key={track.id}
                   track={track}
                   playlists={playlists}
                   isFavorite={favoritesSet.has(track.id)}
                   onToggleFavorite={toggleFavorite}
-                  onAddToPlaylist={addSongToPlaylist}
+                  onAddToPlaylist={handleAddSongToPlaylist}
                   onCreatePlaylist={createPlaylist}
                   onDeletePlaylist={deletePlaylist}
-                  onRemoveFromPlaylist={removeSongFromPlaylist}
+                  onRemoveFromPlaylist={handleRemoveSongFromPlaylist}
                   onPlay={(currentTrack) =>
                     addToQueue({
                       title: currentTrack.title,
@@ -370,7 +480,7 @@ export function HomeContent() {
                     })
                   }
                 />
-              ))}
+              )) : <Card className="p-6 text-center"><p className="text-text-muted">Start recognizing songs to build your collection!</p></Card>}
             </section>
           </div>
 
