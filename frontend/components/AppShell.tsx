@@ -6,9 +6,12 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import BottomPlayBar from "./BottomPlayBar";
 import { PlayerProvider } from "./PlayerProvider";
 import type { Playlist } from "../features/library/types";
+import { scopedKey, useProfile } from "../lib/ProfileContext";
 import { useLanguage } from "../lib/LanguageContext";
 import { t } from "../lib/translations";
-import { useUser } from "../src/context/UserContext";
+import { Button } from "../src/components/ui/Button";
+import { Input } from "../src/components/ui/Input";
+import { Card } from "../src/components/ui/Card";
 
 type HistoryItem = {
   id: string;
@@ -25,6 +28,7 @@ const PRIMARY_NAV = [
   { href: "/", key: "nav_listen", icon: "🎧" },
   { href: "/library", key: "nav_library", icon: "📚" },
   { href: "/search", key: "nav_search", icon: "🔍" },
+  { href: "/profile", key: "nav_profile", icon: "👤" },
   { href: "/settings", key: "nav_settings", icon: "⚙️" },
 ] as const;
 
@@ -38,17 +42,18 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { language } = useLanguage();
+  const { profile, profiles, switchProfile, createProfile, deleteProfile } = useProfile();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
   const [librarySnapshot, setLibrarySnapshot] = useState<LibrarySnapshot>({ favorites: [], playlists: [] });
-  const { isAuthenticated, user, logout } = useUser();
+  const [newProfileName, setNewProfileName] = useState("");
 
   useEffect(() => {
     function syncSidebarData() {
       try {
-        const historyRaw = window.localStorage.getItem("ponotai-history");
-        const libraryRaw = window.localStorage.getItem("ponotai.library.playlists");
-        const favoritesRaw = window.localStorage.getItem("ponotai.library.favorites");
+        const historyRaw = window.localStorage.getItem(scopedKey("ponotai-history", profile.id));
+        const libraryRaw = window.localStorage.getItem(scopedKey("ponotai.library.playlists", profile.id));
+        const favoritesRaw = window.localStorage.getItem(scopedKey("ponotai.library.favorites", profile.id));
         const history = historyRaw ? (JSON.parse(historyRaw) as HistoryItem[]) : [];
         const playlists = libraryRaw ? (JSON.parse(libraryRaw) as Playlist[]) : [];
         const favorites = favoritesRaw ? (JSON.parse(favoritesRaw) as string[]) : [];
@@ -63,7 +68,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     syncSidebarData();
     window.addEventListener("storage", syncSidebarData);
     return () => window.removeEventListener("storage", syncSidebarData);
-  }, [pathname]);
+  }, [pathname, profile.id]);
 
   const recognizedToday = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -73,10 +78,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   return (
     <PlayerProvider>
       <div className="flex min-h-screen">
-        <aside
-          className={`hidden p-4 backdrop-blur-xl transition-all md:block ${isCollapsed ? "w-20" : "w-72"}`}
-          style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)" }}
-        >
+        <aside className={`hidden p-4 backdrop-blur-xl transition-all md:block ${isCollapsed ? "w-20" : "w-72"}`} style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--border)" }}>
           <div className="mb-8 mt-2 flex items-center justify-between">
             <Link href="/" className="block select-none">
               <h1 className="logoWrapper flex items-center gap-2">
@@ -84,24 +86,36 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 {!isCollapsed && <span className="logoText">{language === "bg" ? "ПонотИИ" : "PonotAI"}</span>}
               </h1>
             </Link>
-            <button className="navItem !p-2" onClick={() => setIsCollapsed((prev) => !prev)}>{isCollapsed ? "»" : "«"}</button>
+            <Button variant="ghost" size="sm" className="navItem !p-2" onClick={() => setIsCollapsed((prev) => !prev)}>{isCollapsed ? "»" : "«"}</Button>
           </div>
 
+          {!isCollapsed && (
+            <Card className="mb-4 p-3 text-xs">
+              <p className="text-[var(--muted)]">{language === "bg" ? "Профил" : "Profile"}</p>
+              <div className="mt-2 flex gap-2">
+                <select className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-2 py-1" value={profile.id} onChange={(e) => switchProfile(e.target.value)}>
+                  {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <Link className="rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-2 py-1" href="/settings#profile">⚙️</Link>
+              </div>
+              <p className="mt-1 truncate text-[11px] text-[var(--muted)]">{profile.email || (language === "bg" ? "Няма имейл" : "No email")}</p>
+              <div className="mt-2 flex gap-2">
+                <Input className="flex-1 py-1" placeholder={language === "bg" ? "Нов профил" : "New profile"} value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} />
+                <Button variant="secondary" size="sm" onClick={() => { createProfile(newProfileName); setNewProfileName(""); }}>+</Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  className="disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={profiles.length <= 1}
+                  onClick={() => deleteProfile(profile.id)}
+                  title={language === "bg" ? "Изтрий активния профил" : "Delete active profile"}
+                >
+                  🗑
+                </Button>
+              </div>
+            </Card>
+          )}
 
-          <div className="mb-4 flex items-center gap-2">
-            {!isAuthenticated ? (
-              <Link href="/auth" className="glassBtn">Sign In</Link>
-            ) : (
-              <details className="relative">
-                <summary className="glassBtn list-none cursor-pointer">{user?.username || "Account"}</summary>
-                <div className="absolute right-0 mt-2 w-44 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 text-sm">
-                  <Link href="/settings#profile" className="block rounded px-2 py-1 hover:bg-white/10">Profile</Link>
-                  <Link href="/settings" className="block rounded px-2 py-1 hover:bg-white/10">Settings</Link>
-                  <button className="mt-1 w-full rounded px-2 py-1 text-left hover:bg-white/10" onClick={async () => { await logout(); router.push("/"); }}>Sign Out</button>
-                </div>
-              </details>
-            )}
-          </div>
           <nav className="flex flex-col gap-2 text-base">
             {PRIMARY_NAV.map((item) => (
               <Link key={item.href} className={pathname === item.href ? "navItemActive" : "navItem"} href={item.href}>

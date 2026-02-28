@@ -1,3 +1,32 @@
+:root {
+  --color-page: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f1f5f9;
+  --color-surface-overlay: #e2e8f0;
+  --color-text-primary: #0f172a;
+  --color-text-muted: #64748b;
+  --color-text-inverse: #ffffff;
+  --color-border: #e2e8f0;
+}
+
+.dark {
+  --color-page: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-raised: #334155;
+  --color-surface-overlay: #475569;
+  --color-text-primary: #f8fafc;
+  --color-text-muted: #94a3b8;
+  --color-text-inverse: #0f172a;
+  --color-border: #334155;
+}
+
+body {
+  background-color: var(--color-page);
+  color: var(--color-text-primary);
+  font-family: Inter, system-ui, sans-serif;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
 @import "tailwindcss";
 
 

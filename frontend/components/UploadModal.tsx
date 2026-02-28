@@ -32,15 +32,15 @@ export default function UploadModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-md">
-      <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0f131d]/95 p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-page p-4 backdrop-blur-md">
+      <div className="w-full max-w-2xl rounded-3xl border border-border bg-[#0f131d]/95 p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-2xl font-semibold">{t("upload_modal_title", language)}</h3>
           <button onClick={onClose} className="glassBtn">✕</button>
         </div>
 
         <div
-          className="cursor-pointer rounded-2xl border-2 border-dashed border-white/25 bg-white/5 p-10 text-center"
+          className="cursor-pointer rounded-2xl border-2 border-dashed border-border bg-surface p-10 text-center"
           onClick={() => inputRef.current?.click()}
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
@@ -48,7 +48,7 @@ export default function UploadModal({
           {previewUrl ? (
             <img src={previewUrl} alt="preview" className="mx-auto h-52 rounded-xl object-cover" />
           ) : (
-            <p className="text-white/75">{t("upload_modal_hint", language)}</p>
+            <p className="text-text-muted">{t("upload_modal_hint", language)}</p>
           )}
         </div>
 
