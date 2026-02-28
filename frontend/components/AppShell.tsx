@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import BottomPlayBar from "./BottomPlayBar";
 import { PlayerProvider } from "./PlayerProvider";
@@ -40,6 +40,7 @@ const SECONDARY_NAV = [
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { language } = useLanguage();
   const { profile, profiles, switchProfile, createProfile, deleteProfile } = useProfile();
   const [isCollapsed, setIsCollapsed] = useState(false);

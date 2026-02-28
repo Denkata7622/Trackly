@@ -1,137 +1,409 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useReducer, type ReactNode } from "react";
-import type { FavoriteSong, ManualSubmission, SearchHistoryItem, UserProfile, UserState } from "../types/user";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useReducer,
+  useMemo,
+  type ReactNode,
+} from "react";
+import { apiFetch } from "../lib/apiFetch";
 
-const USER_KEY = "ponotii_user";
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const initialProfile: UserProfile = {
-  id: "local-user",
-  username: "Guest User",
-  email: "guest@ponotii.local",
-  avatarUrl: null,
-  bio: "Music lover using Ponotii.",
-  joinedAt: new Date().toISOString(),
+export type User = {
+  id: string;
+  username: string;
+  email: string;
+  avatarBase64?: string | null;
+  bio?: string | null;
+  createdAt: string;
+};
+
+export type HistoryItem = {
+  id: string;
+  method?: string;
+  title?: string;
+  artist?: string;
+  album?: string;
+  coverUrl?: string;
+  recognized?: boolean;
+  createdAt?: string;
+};
+
+export type FavoriteItem = {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string | null;
+  coverUrl?: string | null;
+  savedAt?: string;
+};
+
+export type ManualSubmission = {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  submittedAt: string;
+};
+
+type Preferences = {
+  theme: "light" | "dark";
+  notifications: boolean;
+};
+
+// ─── Local State (guest / offline) ────────────────────────────────────────────
+
+const TOKEN_KEY = "ponotii_token";
+const GUEST_STATE_KEY = "ponotii_guest_state";
+
+type GuestState = {
+  history: HistoryItem[];
+  favorites: FavoriteItem[];
+  manualSubmissions: ManualSubmission[];
+  preferences: Preferences;
+};
+
+const defaultGuestState: GuestState = {
+  history: [],
+  favorites: [],
+  manualSubmissions: [],
   preferences: { theme: "dark", notifications: true },
 };
 
-const initialState: UserState = {
-  profile: initialProfile,
-  searchHistory: [],
-  favorites: [],
-  manualSubmissions: [],
-};
+function loadGuestState(): GuestState {
+  if (typeof window === "undefined") return defaultGuestState;
+  try {
+    const raw = window.localStorage.getItem(GUEST_STATE_KEY);
+    if (!raw) return defaultGuestState;
+    const parsed = JSON.parse(raw) as GuestState;
+    return {
+      ...defaultGuestState,
+      ...parsed,
+      preferences: { ...defaultGuestState.preferences, ...parsed.preferences },
+    };
+  } catch {
+    return defaultGuestState;
+  }
+}
 
-type Action =
-  | { type: "SET_PROFILE"; payload: Partial<UserProfile> }
-  | { type: "SET_THEME"; payload: "light" | "dark" }
-  | { type: "SET_NOTIFICATIONS"; payload: boolean }
-  | { type: "ADD_HISTORY"; payload: SearchHistoryItem }
+function saveGuestState(state: GuestState) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(GUEST_STATE_KEY, JSON.stringify(state));
+}
+
+type GuestAction =
+  | { type: "SET_PREFERENCES"; payload: Partial<Preferences> }
+  | { type: "ADD_HISTORY"; payload: HistoryItem }
   | { type: "DELETE_HISTORY_ITEM"; payload: string }
   | { type: "CLEAR_HISTORY" }
-  | { type: "ADD_FAVORITE"; payload: FavoriteSong }
+  | { type: "ADD_FAVORITE"; payload: FavoriteItem }
   | { type: "REMOVE_FAVORITE"; payload: string }
   | { type: "ADD_MANUAL_SUBMISSION"; payload: ManualSubmission }
-  | { type: "RESET_ALL" };
+  | { type: "RESET" };
 
-function reducer(state: UserState, action: Action): UserState {
+function guestReducer(state: GuestState, action: GuestAction): GuestState {
   switch (action.type) {
-    case "SET_PROFILE":
-      return { ...state, profile: { ...state.profile, ...action.payload, preferences: state.profile.preferences } };
-    case "SET_THEME":
-      return { ...state, profile: { ...state.profile, preferences: { ...state.profile.preferences, theme: action.payload } } };
-    case "SET_NOTIFICATIONS":
-      return { ...state, profile: { ...state.profile, preferences: { ...state.profile.preferences, notifications: action.payload } } };
+    case "SET_PREFERENCES":
+      return { ...state, preferences: { ...state.preferences, ...action.payload } };
     case "ADD_HISTORY":
-      return { ...state, searchHistory: [action.payload, ...state.searchHistory].slice(0, 300) };
+      return { ...state, history: [action.payload, ...state.history].slice(0, 300) };
     case "DELETE_HISTORY_ITEM":
-      return { ...state, searchHistory: state.searchHistory.filter((item) => item.id !== action.payload) };
+      return { ...state, history: state.history.filter((i) => i.id !== action.payload) };
     case "CLEAR_HISTORY":
-      return { ...state, searchHistory: [] };
+      return { ...state, history: [] };
     case "ADD_FAVORITE": {
-      const exists = state.favorites.some((song) => song.id === action.payload.id);
+      const exists = state.favorites.some((f) => f.id === action.payload.id);
       return exists ? state : { ...state, favorites: [action.payload, ...state.favorites] };
     }
     case "REMOVE_FAVORITE":
-      return { ...state, favorites: state.favorites.filter((song) => song.id !== action.payload) };
+      return { ...state, favorites: state.favorites.filter((f) => f.id !== action.payload) };
     case "ADD_MANUAL_SUBMISSION":
       return { ...state, manualSubmissions: [action.payload, ...state.manualSubmissions] };
-    case "RESET_ALL":
-      return initialState;
+    case "RESET":
+      return defaultGuestState;
     default:
       return state;
   }
 }
 
-function loadState(): UserState {
-  if (typeof window === "undefined") return initialState;
-  try {
-    const raw = window.localStorage.getItem(USER_KEY);
-    if (!raw) return initialState;
-    const parsed = JSON.parse(raw) as UserState;
-    return {
-      ...initialState,
-      ...parsed,
-      profile: {
-        ...initialProfile,
-        ...parsed.profile,
-        preferences: {
-          ...initialProfile.preferences,
-          ...parsed.profile?.preferences,
-        },
-      },
-    };
-  } catch {
-    return initialState;
-  }
-}
+// ─── Context Value ─────────────────────────────────────────────────────────────
 
 type UserContextValue = {
-  state: UserState;
-  setProfile: (payload: Partial<UserProfile>) => void;
-  setTheme: (theme: "light" | "dark") => void;
-  setNotifications: (enabled: boolean) => void;
-  addHistory: (item: SearchHistoryItem) => void;
-  deleteHistoryItem: (id: string) => void;
-  clearHistory: () => void;
-  addFavorite: (song: FavoriteSong) => void;
-  removeFavorite: (id: string) => void;
+  // Auth
+  user: User | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  register: (username: string, email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  updateProfile: (fields: Partial<Pick<User, "username" | "email" | "bio" | "avatarBase64">>) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+
+  // Data (works for both guest and authenticated)
+  history: HistoryItem[];
+  favorites: FavoriteItem[];
+  manualSubmissions: ManualSubmission[];
+  preferences: Preferences;
+  addToHistory: (item: Omit<HistoryItem, "id"> & { id?: string }) => Promise<void>;
+  deleteHistoryItem: (id: string) => Promise<void>;
+  clearHistory: () => Promise<void>;
+  addFavorite: (song: Omit<FavoriteItem, "id"> & { id?: string }) => Promise<void>;
+  removeFavorite: (id: string) => Promise<void>;
   addManualSubmission: (submission: ManualSubmission) => void;
-  deleteAccount: () => void;
+  shareSong: (song: { title: string; artist: string; album?: string; coverUrl?: string }) => Promise<string | null>;
+  setPreferences: (prefs: Partial<Preferences>) => void;
+  deleteAccount: () => Promise<void>;
 };
+
+// ─── Provider ─────────────────────────────────────────────────────────────────
 
 const UserContext = createContext<UserContextValue | null>(null);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState, loadState);
+  // Auth state (server)
+  const initialToken = typeof window === "undefined" ? null : localStorage.getItem(TOKEN_KEY);
+  const [authState, setAuthState] = useReducer(
+    (
+      prev: { user: User | null; token: string | null; isLoading: boolean },
+      next: Partial<{ user: User | null; token: string | null; isLoading: boolean }>
+    ) => ({ ...prev, ...next }),
+    { user: null, token: initialToken, isLoading: Boolean(initialToken) }
+  );
 
-  useEffect(() => {
-    window.localStorage.setItem(USER_KEY, JSON.stringify(state));
-  }, [state]);
+  // Server-fetched data (when authenticated)
+  const [serverHistory, setServerHistory] = useReducer(
+    (_: HistoryItem[], next: HistoryItem[]) => next,
+    []
+  );
+  const [serverFavorites, setServerFavorites] = useReducer(
+    (_: FavoriteItem[], next: FavoriteItem[]) => next,
+    []
+  );
 
+  // Guest / offline state
+  const [guest, dispatchGuest] = useReducer(guestReducer, defaultGuestState, loadGuestState);
+
+  const isAuthenticated = Boolean(authState.token && authState.user);
+
+  // Persist guest state
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", state.profile.preferences.theme === "dark");
-  }, [state.profile.preferences.theme]);
+    saveGuestState(guest);
+  }, [guest]);
+
+  // Apply theme
+  const activePreferences = guest.preferences;
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", activePreferences.theme === "dark");
+  }, [activePreferences.theme]);
+
+  // On mount: validate token and fetch server data
+  useEffect(() => {
+    if (!authState.token) return;
+
+    apiFetch("/api/auth/me")
+      .then(async (res) => {
+        if (!res.ok) throw new Error("UNAUTHORIZED");
+        const me = (await res.json()) as User;
+        setAuthState({ user: me });
+        await fetchServerData();
+      })
+      .catch(() => {
+        localStorage.removeItem(TOKEN_KEY);
+        setAuthState({ token: null, user: null });
+      })
+      .finally(() => setAuthState({ isLoading: false }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authState.token]);
+
+  async function fetchServerData() {
+    const [histRes, favRes] = await Promise.all([
+      apiFetch("/api/history?limit=50"),
+      apiFetch("/api/favorites"),
+    ]);
+    if (histRes.ok) {
+      const payload = (await histRes.json()) as { items: HistoryItem[] };
+      setServerHistory(payload.items || []);
+    }
+    if (favRes.ok) {
+      const payload = (await favRes.json()) as { items: FavoriteItem[] };
+      setServerFavorites(payload.items || []);
+    }
+  }
+
+  async function handleAuthSuccess(payload: { token: string; user: User }) {
+    localStorage.setItem(TOKEN_KEY, payload.token);
+    setAuthState({ token: payload.token, user: payload.user, isLoading: false });
+    await fetchServerData();
+  }
+
+  // ─── Auth Actions ────────────────────────────────────────────────────────────
+
+  async function register(username: string, email: string, password: string) {
+    const res = await apiFetch("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username, email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "REGISTER_FAILED");
+    await handleAuthSuccess(data as { token: string; user: User });
+  }
+
+  async function login(email: string, password: string) {
+    const res = await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "LOGIN_FAILED");
+    await handleAuthSuccess(data as { token: string; user: User });
+  }
+
+  async function logout() {
+    await apiFetch("/api/auth/logout", { method: "POST" });
+    localStorage.removeItem(TOKEN_KEY);
+    setAuthState({ token: null, user: null, isLoading: false });
+    setServerHistory([]);
+    setServerFavorites([]);
+  }
+
+  async function updateProfile(fields: Partial<Pick<User, "username" | "email" | "bio" | "avatarBase64">>) {
+    const res = await apiFetch("/api/auth/me", { method: "PATCH", body: JSON.stringify(fields) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "UPDATE_FAILED");
+    setAuthState({ user: data as User });
+  }
+
+  async function changePassword(currentPassword: string, newPassword: string) {
+    const res = await apiFetch("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || "PASSWORD_CHANGE_FAILED");
+    }
+  }
+
+  async function deleteAccount() {
+    if (isAuthenticated) {
+      const res = await apiFetch("/api/auth/me", { method: "DELETE" });
+      if (!res.ok) throw new Error("DELETE_ACCOUNT_FAILED");
+      await logout();
+    }
+    localStorage.clear();
+    dispatchGuest({ type: "RESET" });
+  }
+
+  // ─── Data Actions (hybrid) ────────────────────────────────────────────────────
+
+  async function addToHistory(item: Omit<HistoryItem, "id"> & { id?: string }) {
+    if (isAuthenticated) {
+      const res = await apiFetch("/api/history", { method: "POST", body: JSON.stringify(item) });
+      if (res.ok) {
+        const created = (await res.json()) as HistoryItem;
+        setServerHistory([created, ...serverHistory]);
+      }
+      return;
+    }
+    dispatchGuest({
+      type: "ADD_HISTORY",
+      payload: { id: item.id ?? crypto.randomUUID(), ...item },
+    });
+  }
+
+  async function deleteHistoryItem(id: string) {
+    if (isAuthenticated) {
+      await apiFetch(`/api/history/${id}`, { method: "DELETE" });
+      setServerHistory(serverHistory.filter((e) => e.id !== id));
+      return;
+    }
+    dispatchGuest({ type: "DELETE_HISTORY_ITEM", payload: id });
+  }
+
+  async function clearHistory() {
+    if (isAuthenticated) {
+      await apiFetch("/api/history", { method: "DELETE" });
+      setServerHistory([]);
+      return;
+    }
+    dispatchGuest({ type: "CLEAR_HISTORY" });
+  }
+
+  async function addFavorite(song: Omit<FavoriteItem, "id"> & { id?: string }) {
+    if (isAuthenticated) {
+      const res = await apiFetch("/api/favorites", { method: "POST", body: JSON.stringify(song) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "FAVORITE_FAILED");
+      setServerFavorites([data as FavoriteItem, ...serverFavorites]);
+      return;
+    }
+    dispatchGuest({
+      type: "ADD_FAVORITE",
+      payload: { id: song.id ?? crypto.randomUUID(), title: song.title, artist: song.artist, album: song.album ?? null, coverUrl: song.coverUrl ?? null },
+    });
+  }
+
+  async function removeFavorite(id: string) {
+    if (isAuthenticated) {
+      await apiFetch(`/api/favorites/${id}`, { method: "DELETE" });
+      setServerFavorites(serverFavorites.filter((f) => f.id !== id));
+      return;
+    }
+    dispatchGuest({ type: "REMOVE_FAVORITE", payload: id });
+  }
+
+  async function shareSong(song: { title: string; artist: string; album?: string; coverUrl?: string }) {
+    if (!isAuthenticated) {
+      alert("Влез в профила си, за да споделяш песни.");
+      return null;
+    }
+    const res = await apiFetch("/api/share", { method: "POST", body: JSON.stringify(song) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "SHARE_FAILED");
+    return (data as { shareUrl: string }).shareUrl;
+  }
+
+  function setPreferences(prefs: Partial<Preferences>) {
+    dispatchGuest({ type: "SET_PREFERENCES", payload: prefs });
+  }
+
+  function addManualSubmission(submission: ManualSubmission) {
+    dispatchGuest({ type: "ADD_MANUAL_SUBMISSION", payload: submission });
+  }
+
+  // ─── Compose value ────────────────────────────────────────────────────────────
 
   const value = useMemo<UserContextValue>(
     () => ({
-      state,
-      setProfile: (payload) => dispatch({ type: "SET_PROFILE", payload }),
-      setTheme: (theme) => dispatch({ type: "SET_THEME", payload: theme }),
-      setNotifications: (enabled) => dispatch({ type: "SET_NOTIFICATIONS", payload: enabled }),
-      addHistory: (item) => dispatch({ type: "ADD_HISTORY", payload: item }),
-      deleteHistoryItem: (id) => dispatch({ type: "DELETE_HISTORY_ITEM", payload: id }),
-      clearHistory: () => dispatch({ type: "CLEAR_HISTORY" }),
-      addFavorite: (song) => dispatch({ type: "ADD_FAVORITE", payload: song }),
-      removeFavorite: (id) => dispatch({ type: "REMOVE_FAVORITE", payload: id }),
-      addManualSubmission: (submission) => dispatch({ type: "ADD_MANUAL_SUBMISSION", payload: submission }),
-      deleteAccount: () => {
-        window.localStorage.clear();
-        dispatch({ type: "RESET_ALL" });
-      },
+      user: authState.user,
+      token: authState.token,
+      isAuthenticated,
+      isLoading: authState.isLoading,
+      register,
+      login,
+      logout,
+      updateProfile,
+      changePassword,
+      history: isAuthenticated ? serverHistory : guest.history,
+      favorites: isAuthenticated ? serverFavorites : guest.favorites,
+      manualSubmissions: guest.manualSubmissions,
+      preferences: guest.preferences,
+      addToHistory,
+      deleteHistoryItem,
+      clearHistory,
+      addFavorite,
+      removeFavorite,
+      addManualSubmission,
+      shareSong,
+      setPreferences,
+      deleteAccount,
     }),
-    [state],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [authState, serverHistory, serverFavorites, guest, isAuthenticated]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
