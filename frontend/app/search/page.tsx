@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { scopedKey, useProfile } from "../../lib/ProfileContext";
 import { useLanguage } from "../../lib/LanguageContext";
 import { t } from "../../lib/translations";
 
@@ -9,10 +10,10 @@ type HistoryItem = {
   song?: { songName?: string; artist?: string };
 };
 
-function readHistory(): HistoryItem[] {
+function readHistory(profileId: string): HistoryItem[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(window.localStorage.getItem("ponotai-history") ?? "[]") as HistoryItem[];
+    return JSON.parse(window.localStorage.getItem(scopedKey("ponotai-history", profileId)) ?? "[]") as HistoryItem[];
   } catch {
     return [];
   }
@@ -20,8 +21,9 @@ function readHistory(): HistoryItem[] {
 
 export default function SearchPage() {
   const { language } = useLanguage();
+  const { profile } = useProfile();
   const [query, setQuery] = useState("");
-  const [history] = useState<HistoryItem[]>(readHistory);
+  const history = useMemo(() => readHistory(profile.id), [profile.id]);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();

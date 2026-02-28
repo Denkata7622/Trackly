@@ -54,7 +54,7 @@ export default function TrackCard({
         <button
           type="button"
           onClick={() => onPlay?.(track)}
-          className="absolute inset-0 grid place-items-center rounded-xl bg-black/45 text-white opacity-0 transition group-hover:opacity-100"
+          className="absolute inset-0 grid place-items-center rounded-xl bg-surface-overlay text-text-primary opacity-0 transition group-hover:opacity-100"
           aria-label={t("btn_play", language)}
         >
           <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--accent)] text-sm">▶</span>

@@ -7,13 +7,17 @@ function createPlaylistId() {
   return `pl-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
-export function useLibrary() {
-  const [libraryState, setLibraryState] = useState<LibraryState>(() => loadLibraryState());
+export function useLibrary(profileId: string) {
+  const [libraryState, setLibraryState] = useState<LibraryState>(() => loadLibraryState(profileId));
 
   useEffect(() => {
-    persistLibraryState(libraryState);
+    setLibraryState(loadLibraryState(profileId));
+  }, [profileId]);
+
+  useEffect(() => {
+    persistLibraryState(libraryState, profileId);
     void syncLibraryState(libraryState);
-  }, [libraryState]);
+  }, [libraryState, profileId]);
 
   const favoritesSet = useMemo(() => new Set(libraryState.favorites), [libraryState.favorites]);
 

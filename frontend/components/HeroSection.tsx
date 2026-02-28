@@ -26,7 +26,7 @@ export default function HeroSection({
   theme,
 }: HeroSectionProps) {
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-white/5 p-6 sm:p-10">
+    <section className="relative overflow-hidden rounded-[28px] border border-border bg-surface p-6 sm:p-10">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(124,92,255,0.3),transparent_45%),radial-gradient(circle_at_80%_10%,rgba(76,211,255,0.2),transparent_40%)]" />
       <div className="relative">
         <div className="mb-8 flex flex-wrap items-center justify-end gap-2">
@@ -35,7 +35,7 @@ export default function HeroSection({
           <button className="glassBtn" onClick={onToggleTheme}>{theme === "dark" ? t("theme_light", language) : t("theme_dark", language)}</button>
         </div>
 
-        <p className="text-center text-sm uppercase tracking-[0.28em] text-white/60">{language === "bg" ? "ПонотИИ" : "PonotAI"}</p>
+        <p className="text-center text-sm uppercase tracking-[0.28em] text-text-muted">{language === "bg" ? "ПонотИИ" : "PonotAI"}</p>
         <h1 className="mt-3 text-center text-4xl font-bold sm:text-5xl">{t("hero_tagline", language)}</h1>
 
         <div className="mt-10 flex flex-col items-center gap-5">
@@ -45,7 +45,7 @@ export default function HeroSection({
           >
             <span className="text-4xl">{isListening ? "〰️" : "🎙️"}</span>
             <span className="mt-2 text-base font-semibold tracking-wide">{t("hero_title", language)}</span>
-            {isListening && <span className="mt-1 text-xs text-white/80">{t("recognizing_status", language)}</span>}
+            {isListening && <span className="mt-1 text-xs text-text-muted">{t("recognizing_status", language)}</span>}
           </button>
 
           <button onClick={onOpenUpload} className="secondaryHeroAction">

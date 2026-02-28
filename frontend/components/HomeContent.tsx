@@ -23,6 +23,11 @@ import type { Track } from "../features/tracks/types";
 import { useLanguage } from "../lib/LanguageContext";
 import { useTheme } from "../lib/ThemeContext";
 import { t } from "../lib/translations";
+import { scopedKey, useProfile } from "../lib/ProfileContext";
+import { useUser } from "../src/context/UserContext";
+import { Button } from "../src/components/ui/Button";
+import { Input } from "../src/components/ui/Input";
+import { Card } from "../src/components/ui/Card";
 
 type Toast = { id: string; kind: "success" | "error" | "info"; message: string };
 type HistoryEntry = { id: string; source: "audio" | "ocr"; createdAt: string; song: SongMatch };
@@ -71,7 +76,12 @@ export function HomeContent() {
   const { addToQueue } = usePlayer();
   const { language, setLanguage } = useLanguage();
   const { theme, toggleTheme } = useTheme();
-  const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist, removeSongFromPlaylist } = useLibrary();
+  const { profile } = useProfile();
+  const { addHistory: addUserHistory, addFavorite, addManualSubmission } = useUser();
+  const profileHistoryKey = scopedKey(HISTORY_KEY, profile.id);
+  const profileMaxSongsKey = scopedKey(MAX_SONGS_KEY, profile.id);
+  const profileOcrLanguageKey = scopedKey(OCR_LANGUAGE_KEY, profile.id);
+  const { playlists, favoritesSet, toggleFavorite, createPlaylist, deletePlaylist, addSongToPlaylist, removeSongFromPlaylist } = useLibrary(profile.id);
 
   const latestResult: SongRecognitionResult | null = useMemo(() => {
     if (audioResult) return songMatchToRecognitionResult(audioResult.primaryMatch, "audio");
@@ -87,34 +97,36 @@ export function HomeContent() {
   }, [latestResult]);
 
   useEffect(() => {
-    const savedHistory = localStorage.getItem(HISTORY_KEY);
+    const savedHistory = localStorage.getItem(profileHistoryKey);
     if (savedHistory) {
       try {
         setHistory(JSON.parse(savedHistory) as HistoryEntry[]);
       } catch {
         setHistory([]);
       }
+      return;
     }
-  }, []);
+    setHistory([]);
+  }, [profileHistoryKey]);
 
   useEffect(() => {
-    const storedMaxSongs = Number(localStorage.getItem(MAX_SONGS_KEY) ?? 10);
-    const storedOcrLanguage = localStorage.getItem(OCR_LANGUAGE_KEY) ?? "eng";
+    const storedMaxSongs = Number(localStorage.getItem(profileMaxSongsKey) ?? 10);
+    const storedOcrLanguage = localStorage.getItem(profileOcrLanguageKey) ?? "eng";
     setMaxSongs(Math.min(20, Math.max(1, storedMaxSongs || 10)));
     setOcrLanguage(storedOcrLanguage);
-  }, []);
+  }, [profileMaxSongsKey, profileOcrLanguageKey]);
 
   useEffect(() => {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 18)));
-  }, [history]);
+    localStorage.setItem(profileHistoryKey, JSON.stringify(history.slice(0, 18)));
+  }, [history, profileHistoryKey]);
 
   useEffect(() => {
-    localStorage.setItem(MAX_SONGS_KEY, String(maxSongs));
-  }, [maxSongs]);
+    localStorage.setItem(profileMaxSongsKey, String(maxSongs));
+  }, [maxSongs, profileMaxSongsKey]);
 
   useEffect(() => {
-    localStorage.setItem(OCR_LANGUAGE_KEY, ocrLanguage);
-  }, [ocrLanguage]);
+    localStorage.setItem(profileOcrLanguageKey, ocrLanguage);
+  }, [ocrLanguage, profileOcrLanguageKey]);
 
   function pushToast(kind: Toast["kind"], message: string) {
     const id = crypto.randomUUID();
@@ -156,9 +168,22 @@ export function HomeContent() {
       setAudioResult(recognized);
       setImageResult(null);
       addToHistory("audio", [recognized.primaryMatch]);
+      addUserHistory({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        method: "audio-record",
+        recognized: true,
+        result: {
+          title: recognized.primaryMatch.songName,
+          artist: recognized.primaryMatch.artist,
+          album: recognized.primaryMatch.album,
+          coverUrl: recognized.primaryMatch.albumArtUrl,
+        },
+      });
       pushToast("success", t("toast_recognized", language, { song: recognized.primaryMatch.songName }));
     } catch (error) {
       setErrorMessage((error as Error).message || t("toast_audio_failed", language));
+      addUserHistory({ id: crypto.randomUUID(), timestamp: new Date().toISOString(), method: "audio-record", recognized: false, result: null });
       pushToast("error", t("toast_audio_failed", language));
     } finally {
       setIsRecording(false);
@@ -218,6 +243,13 @@ export function HomeContent() {
     setImageResult(updatedResult);
     setAudioResult(null);
     addToHistory("ocr", selectedSongs);
+    selectedSongs.forEach((song) => addUserHistory({
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      method: "album-image",
+      recognized: true,
+      result: { title: song.songName, artist: song.artist, album: song.album, coverUrl: song.albumArtUrl },
+    }));
     setShowReviewModal(false);
     setPendingImageResult(null);
     pushToast("success", t("toast_added", language, { count: selectedSongs.length }));
@@ -226,6 +258,18 @@ export function HomeContent() {
   function saveSong(song: SongMatch) {
     addToHistory("audio", [song]);
     pushToast("success", t("toast_saved", language, { song: song.songName }));
+  }
+
+  function favoriteSong(song: SongMatch) {
+    addFavorite({
+      id: `${song.songName}-${song.artist}`.toLowerCase().replace(/\s+/g, "-"),
+      savedAt: new Date().toISOString(),
+      title: song.songName,
+      artist: song.artist,
+      album: song.album,
+      coverUrl: song.albumArtUrl,
+    });
+    pushToast("success", `Added ${song.songName} to favorites`);
   }
 
   function playSong(song: SongMatch) {
@@ -254,16 +298,16 @@ export function HomeContent() {
               theme={theme}
             />
 
-            <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
+            <Card className="rounded-3xl p-5">
               <h3 className="mb-4 text-lg font-semibold">{t("settings_title", language)}</h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-sm">
-                  <span className="mb-1 block text-white/70">{t("stats_max_ocr_songs", language)}</span>
-                  <input type="number" min={1} max={20} value={maxSongs} onChange={(e) => setMaxSongs(Math.min(20, Math.max(1, Number(e.target.value) || 1)))} className="w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 focus:border-violet-300 focus:outline-none" />
+                  <span className="mb-1 block text-text-muted">{t("stats_max_ocr_songs", language)}</span>
+                  <Input type="number" min={1} max={20} value={maxSongs} onChange={(e) => setMaxSongs(Math.min(20, Math.max(1, Number(e.target.value) || 1)))} />
                 </label>
                 <label className="text-sm">
-                  <span className="mb-1 block text-white/70">{t("stats_ocr_language", language)}</span>
-                  <select value={ocrLanguage} onChange={(e) => setOcrLanguage(e.target.value)} className="w-full rounded-xl border border-white/15 bg-black/20 px-3 py-2 focus:border-violet-300 focus:outline-none">
+                  <span className="mb-1 block text-text-muted">{t("stats_ocr_language", language)}</span>
+                  <select value={ocrLanguage} onChange={(e) => setOcrLanguage(e.target.value)} className="w-full bg-surface border border-border text-text-primary rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all duration-200">
                     <option value="eng">{t("ocr_lang_english", language)}</option>
                     <option value="spa">{t("ocr_lang_spanish", language)}</option>
                     <option value="fra">{t("ocr_lang_french", language)}</option>
@@ -273,11 +317,33 @@ export function HomeContent() {
                   </select>
                 </label>
               </div>
-            </section>
+            </Card>
 
-            {errorMessage && <p className="rounded-2xl border border-red-300/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{errorMessage}</p>}
+            {errorMessage && <p className="rounded-2xl border border-danger bg-surface-raised px-4 py-3 text-sm text-danger">{errorMessage}</p>}
 
-            <ResultCard language={language} song={latestResult} onSave={saveSong} onPlay={playSong} />
+            {errorMessage && (
+              <Card className="rounded-2xl p-4">
+                <h3 className="text-base font-semibold">Manual submission</h3>
+                <p className="text-xs text-text-muted">Could not recognize? Submit manually.</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => addManualSubmission({
+                    id: crypto.randomUUID(),
+                    submittedAt: new Date().toISOString(),
+                    title: latestResult?.songName || "Unknown title",
+                    artist: latestResult?.artist || "Unknown artist",
+                    album: latestResult?.album || "Unknown album",
+                    status: "pending",
+                  })}
+                >
+                  Submit pending review
+                </Button>
+              </Card>
+            )}
+
+            <ResultCard language={language} song={latestResult} onSave={saveSong} onPlay={playSong} onFavorite={favoriteSong} />
 
             <HistoryGrid language={language} items={history} onDelete={(id) => setHistory((prev) => prev.filter((entry) => entry.id !== id))} />
 

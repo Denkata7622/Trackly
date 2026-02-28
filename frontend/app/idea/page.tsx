@@ -7,12 +7,12 @@ export default function IdeaPage() {
   const isBg = language === "bg";
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-16 text-white">
+    <main className="mx-auto max-w-5xl px-6 py-16 text-text-primary">
       <section className="mb-16 text-center">
         <h1 className="mt-6 text-5xl font-semibold tracking-tight leading-tight">
           {isBg ? "Идеята зад ПонотИИ" : "The idea behind PonotAI"}
         </h1>
-        <p className="mx-auto mt-5 max-w-3xl text-lg text-white/65 leading-relaxed">
+        <p className="mx-auto mt-5 max-w-3xl text-lg text-text-muted leading-relaxed">
           {isBg
             ? "ПонотИИ решава проблема след разпознаването: не само каква е песента, а къде да я слушаш бързо, сигурно и легално."
             : "PonotAI solves the problem after recognition: not only what song it is, but where to listen quickly, safely, and legally."}
@@ -43,17 +43,17 @@ export default function IdeaPage() {
               : "Frontend and backend work together for recognition, metadata, and history.",
           },
         ].map((item) => (
-          <div key={item.heading} className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
-            <div className="text-xs text-white/55">{item.title}</div>
+          <div key={item.heading} className="rounded-2xl border border-border bg-surface p-6 backdrop-blur-xl">
+            <div className="text-xs text-text-muted">{item.title}</div>
             <h3 className="mt-2 text-lg font-semibold">{item.heading}</h3>
-            <p className="mt-3 text-sm leading-relaxed text-white/70">{item.text}</p>
+            <p className="mt-3 text-sm leading-relaxed text-text-muted">{item.text}</p>
           </div>
         ))}
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl">
+      <section className="rounded-2xl border border-border bg-surface p-8 backdrop-blur-xl">
         <h2 className="mb-3 text-2xl font-semibold">{isBg ? "Защо това е важно" : "Why this matters"}</h2>
-        <p className="leading-relaxed text-white/75">
+        <p className="leading-relaxed text-text-muted">
           {isBg
             ? "Целта е ясна: бърз път от „чувам песен“ до „слушам легално“. Това подкрепя артистите, намалява объркването и прави демонстрацията на продукта реална и убедителна."
             : "The goal is clear: a fast path from “I hear a song” to “I listen legally.” It supports artists, reduces friction, and makes the product demo practical and convincing."}

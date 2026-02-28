@@ -80,19 +80,19 @@ export default function SongReviewModal({ songs, onConfirm, onCancel }: SongRevi
   const selectedCount = editableSongs.filter((s) => s.selected).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/15 bg-[#0a0b10] p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-page p-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-border bg-[#0a0b10] p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-2xl font-semibold">{t("modal_review_title", language)}</h2>
           <button
             onClick={onCancel}
-            className="rounded-lg border border-white/20 px-3 py-1 text-sm hover:bg-white/10"
+            className="rounded-lg border border-border px-3 py-1 text-sm hover:bg-surface-raised"
           >
             {t("modal_close", language)}
           </button>
         </div>
 
-        <p className="mb-6 text-sm text-white/70">
+        <p className="mb-6 text-sm text-text-muted">
           {t("modal_selected_count", language, { selected: selectedCount, total: editableSongs.length })}
         </p>
 
@@ -106,7 +106,7 @@ export default function SongReviewModal({ songs, onConfirm, onCancel }: SongRevi
                 className={`rounded-xl border p-4 transition ${
                   song.selected
                     ? "border-violet-400/40 bg-violet-500/10"
-                    : "border-white/10 bg-white/5 opacity-60"
+                    : "border-border bg-surface opacity-60"
                 }`}
               >
                 <div className="flex items-start gap-4">
@@ -118,7 +118,7 @@ export default function SongReviewModal({ songs, onConfirm, onCancel }: SongRevi
                   />
 
                   <div>
-                    <p className="mb-2 text-xs text-white/60">{t("modal_choose_cover", language)}</p>
+                    <p className="mb-2 text-xs text-text-muted">{t("modal_choose_cover", language)}</p>
                     <div className="flex gap-2">
                       {artworkOptions.map((url, artIndex) => (
                         <button
@@ -127,7 +127,7 @@ export default function SongReviewModal({ songs, onConfirm, onCancel }: SongRevi
                           className={`h-16 w-16 overflow-hidden rounded-lg border-2 transition ${
                             song.selectedArtIndex === artIndex
                               ? "border-violet-400 ring-2 ring-violet-400/50"
-                              : "border-white/20 opacity-60 hover:opacity-100"
+                              : "border-border opacity-60 hover:opacity-100"
                           }`}
                         >
                           <img src={url} alt={`Cover ${artIndex + 1}`} className="h-full w-full object-cover" />
@@ -138,24 +138,24 @@ export default function SongReviewModal({ songs, onConfirm, onCancel }: SongRevi
 
                   <div className="flex-1 space-y-3">
                     <div>
-                      <label className="mb-1 block text-xs text-white/60">{t("modal_song_name", language)}</label>
+                      <label className="mb-1 block text-xs text-text-muted">{t("modal_song_name", language)}</label>
                       <input
                         type="text"
                         value={song.editedSongName ?? song.songName}
                         onChange={(e) => updateSongName(index, e.target.value)}
                         disabled={!song.selected}
-                        className="w-full rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-sm disabled:opacity-50"
+                        className="w-full rounded-lg border border-border bg-surface-overlay px-3 py-2 text-sm disabled:opacity-50"
                       />
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-xs text-white/60">{t("modal_artist", language)}</label>
+                      <label className="mb-1 block text-xs text-text-muted">{t("modal_artist", language)}</label>
                       <input
                         type="text"
                         value={song.editedArtist ?? song.artist}
                         onChange={(e) => updateArtist(index, e.target.value)}
                         disabled={!song.selected}
-                        className="w-full rounded-lg border border-white/20 bg-black/30 px-3 py-2 text-sm disabled:opacity-50"
+                        className="w-full rounded-lg border border-border bg-surface-overlay px-3 py-2 text-sm disabled:opacity-50"
                       />
                     </div>
                   </div>
@@ -168,7 +168,7 @@ export default function SongReviewModal({ songs, onConfirm, onCancel }: SongRevi
         <div className="mt-6 flex items-center justify-end gap-3">
           <button
             onClick={onCancel}
-            className="rounded-lg border border-white/20 px-5 py-2 hover:bg-white/10"
+            className="rounded-lg border border-border px-5 py-2 hover:bg-surface-raised"
           >
             {t("modal_cancel", language)}
           </button>
