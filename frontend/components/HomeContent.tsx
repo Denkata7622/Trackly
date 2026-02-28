@@ -134,7 +134,7 @@ export function HomeContent() {
     window.setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }
 
-  function addToHistory(source: HistoryEntry["source"], songs: SongMatch[]) {
+  function addToHistoryLocal(source: HistoryEntry["source"], songs: SongMatch[]) {
     const createdAt = new Date().toISOString();
     const entries = songs.map((song) => ({ id: crypto.randomUUID(), source, createdAt, song }));
     setHistory((prev) => [...entries, ...prev].slice(0, 18));
@@ -256,7 +256,8 @@ export function HomeContent() {
   }
 
   function saveSong(song: SongMatch) {
-    addToHistory("audio", [song]);
+    addToHistoryLocal("audio", [song]);
+    void addFavorite({ title: song.songName, artist: song.artist, album: song.album, coverUrl: song.albumArtUrl });
     pushToast("success", t("toast_saved", language, { song: song.songName }));
   }
 

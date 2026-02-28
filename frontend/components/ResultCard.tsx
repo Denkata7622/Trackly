@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { SongMatch } from "../features/recognition/api";
 import { t, type Language } from "../lib/translations";
 import { Card } from "../src/components/ui/Card";
@@ -15,6 +16,10 @@ type ResultCardProps = {
 };
 
 export default function ResultCard({ language, song, onSave, onPlay, onFavorite }: ResultCardProps) {
+  const { isAuthenticated, shareSong } = useUser();
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareHint, setShareHint] = useState<string | null>(null);
+
   if (!song) {
     return (
       <Card className="rounded-3xl p-8 text-center">
@@ -22,6 +27,26 @@ export default function ResultCard({ language, song, onSave, onPlay, onFavorite 
         <p className="mt-3 text-text-muted">{t("empty_results_hint", language)}</p>
       </Card>
     );
+  }
+
+  async function handleShare() {
+    if (!song) return;
+    if (!isAuthenticated) {
+      setShareHint("Sign in to share");
+      return;
+    }
+
+    const url = await shareSong({
+      title: song.songName,
+      artist: song.artist,
+      album: song.album,
+      coverUrl: song.albumArtUrl,
+    });
+
+    if (url) {
+      setShareUrl(url);
+      setShareHint(null);
+    }
   }
 
   return (
@@ -45,13 +70,26 @@ export default function ResultCard({ language, song, onSave, onPlay, onFavorite 
           )}
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button variant="primary" size="sm" onClick={() => onPlay(song)}>▶ {t("btn_play", language)}</Button>
-            <Button variant="secondary" size="sm" onClick={() => onSave(song)}>💾 {t("btn_save", language)}</Button>
+            <button className="pillAction" onClick={() => onPlay(song)}>▶ {t("btn_play", language)}</button>
+            <button className="pillAction" onClick={() => onSave(song)}>💾 {t("btn_save", language)}</button>
+            <button className="glassBtn" onClick={() => void handleShare()}>🔗 Share</button>
             {song.platformLinks.spotify && <a className="pillAction bg-[#1db954]/20" href={song.platformLinks.spotify} target="_blank" rel="noreferrer">🟢 {t("btn_spotify", language)}</a>}
             {song.platformLinks.appleMusic && <a className="pillAction bg-rose-500/20" href={song.platformLinks.appleMusic} target="_blank" rel="noreferrer">🍎 {t("btn_apple_music", language)}</a>}
             {song.platformLinks.youtubeMusic && <a className="pillAction bg-red-500/20" href={song.platformLinks.youtubeMusic} target="_blank" rel="noreferrer">▶ {t("btn_youtube_music", language)}</a>}
             {onFavorite && <Button variant="ghost" size="sm" onClick={() => onFavorite(song)}>❤️ Favorite</Button>}
           </div>
+
+          {(shareHint || shareUrl) && (
+            <div className="mt-3 rounded-xl border border-white/15 bg-black/25 p-3 text-sm">
+              {shareHint && <p>{shareHint}</p>}
+              {shareUrl && (
+                <div className="flex items-center gap-2">
+                  <a className="underline" href={shareUrl} target="_blank" rel="noreferrer">{shareUrl}</a>
+                  <button className="glassBtn !px-2 !py-1" onClick={() => void navigator.clipboard.writeText(shareUrl)}>Copy link</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </Card>
